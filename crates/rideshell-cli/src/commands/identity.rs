@@ -5,7 +5,7 @@ use rideshell_core::providers::{self, Provider, ProviderContext, Severity};
 use rideshell_core::store::{Profile, Store};
 use rideshell_core::{brand, exec, shims};
 
-use super::{profile::check_not_secret, resolve_here, run, secret, shim, Ctx};
+use super::{history, profile::check_not_secret, resolve_here, run, secret, shim, Ctx};
 use crate::cli::BrowserArg;
 use crate::cli::{AuthCommand, IdentityCommand, Scope};
 use crate::ui;
@@ -55,6 +55,7 @@ pub fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Res
     };
     let mut store = ctx.store()?;
     let p = store.require_profile(profile)?;
+    let is_new = !store.identities(p.id)?.contains_key(&identity_id);
     let mut settings = store.identities(p.id)?.remove(&identity_id).unwrap_or_default();
     if provider.id() == "custom" && !settings.contains_key("tool") {
         settings.insert("tool".into(), identity_id[7..].to_string());
@@ -110,6 +111,9 @@ pub fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Res
         label,
         provider.summary(&settings, &pctx(ctx, &p, &accounts))
     ));
+    if is_new {
+        history::share_by_default(ctx, &store, &p, &identity_id);
+    }
     drop(store);
 
     for (env, value) in secrets {
@@ -284,6 +288,7 @@ pub fn login_logout(
         // First use: give this profile its own account with defaults.
         store.set_identity(&p.name, provider.id(), &Default::default())?;
         ui::success(format!("{} now has its own {} account", ui::accent(&p.name), provider.display_name()));
+        history::share_by_default(ctx, &store, &p, provider.id());
         if provider.auto_shim() {
             shim::add(ctx, provider.tool())?;
         }

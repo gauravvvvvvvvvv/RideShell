@@ -110,8 +110,15 @@ fn run_shim_inner(tool: &str, args: Vec<OsString>) -> Result<i32> {
     let real = shims::find_real(tool, Some(&ctx.paths.shims_dir()))?;
     let real_s = real.to_string_lossy().into_owned();
 
-    let bypass = std::env::var_os(shims::BYPASS_ENV).is_some_and(|v| !v.is_empty() && v != "0");
-    let store = if bypass { None } else { Store::open_existing(&ctx.paths.db_file())? };
+    let set = |k: &str| std::env::var_os(k).is_some_and(|v| !v.is_empty() && v != "0");
+    let bypass = set(shims::BYPASS_ENV);
+    // Profiles apply only where RideShell is in use: a RideShell window, a
+    // shell with RideShell's integration loaded, or an explicit profile. In a
+    // plain PowerShell / cmd / bash the shim (on the user PATH) runs the real
+    // tool untouched, so no account or environment leaks into those shells.
+    let in_rideshell =
+        [brand::env::SESSION, brand::env::SHELL, brand::env::PROFILE, brand::env::ACTIVE_PROFILE].into_iter().any(set);
+    let store = if bypass || !in_rideshell { None } else { Store::open_existing(&ctx.paths.db_file())? };
     let Some(store) = store else {
         return exec::run(&real_s, &args, &Default::default(), None);
     };

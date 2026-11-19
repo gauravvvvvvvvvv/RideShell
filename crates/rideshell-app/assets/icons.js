@@ -5,6 +5,10 @@
   window.ICONS = {
     logo: `<img src="/icon.png" alt="" draggable="false">`,
     plus: s('<path d="M12 5v14M5 12h14"/>'),
+    play: s('<path d="M8 5.5v13l10-6.5z" fill="currentColor"/>'),
+    pause: s('<path d="M8 5v14M16 5v14" stroke-width="3"/>'),
+    next: s('<path d="M6 5.5v13l9-6.5z" fill="currentColor"/><path d="M18 5v14" stroke-width="2.4"/>'),
+    prev: s('<path d="M18 5.5v13l-9-6.5z" fill="currentColor"/><path d="M6 5v14" stroke-width="2.4"/>'),
     close: s('<path d="M6 6l12 12M18 6L6 18"/>'),
     min: s('<path d="M5 12h14"/>'),
     max: s('<rect x="5" y="5" width="14" height="14" rx="2.5"/>'),

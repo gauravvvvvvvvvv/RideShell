@@ -66,6 +66,7 @@
       case 'picked': openTab({ cwd: m.path }); break;
       case 'dropped': onDropped(m.items); break;
       case 'dir': onDir(m); break;
+      case 'media': renderMedia(m.now); break;
       case 'worked': RS.worked = m.folders || []; if (!$('#pane-files').hidden) renderFolderLists(); break;
       case 'paste': { const t = RS.tabs.get(m.id); if (t && !t.ended) t.term.paste(m.text); break; }
     }
@@ -220,6 +221,14 @@
   function switchAccount(name) {
     const t = activeTab();
     if (!t || t.ended) { openTab({ profile: name }); return; }
+    if (!t.atPrompt) {
+      // A program (Claude Code, an editor, ...) owns the input: typing the switch
+      // command would land inside it. It also could not change the account of a
+      // program already running, so the new account gets its own tab here instead.
+      openTab({ profile: name, cwd: t.live.cwd || t.cwd });
+      toast(`A program is running in this tab, so ${name} opened in a new tab in the same folder`);
+      return;
+    }
     // Esc clears whatever is typed (PSReadLine), then the session switches.
     post({ t: 'input', id: t.id, data: '\x1b' + `rideshell profile use ${name}\r` });
     t.live.profile = name;
@@ -530,6 +539,27 @@
   $('#tools').addEventListener('mousedown', (e) => { if (e.target.id === 'tools') closeTools(); });
 
   // ----- status bar -------------------------------------------------------------
+
+  // ----- Spotify (status bar) -------------------------------------------------------
+  // Shown only while Spotify runs and has played; it replaces the shells label.
+
+  function renderMedia(now) {
+    const box = $('#sb-media');
+    box.hidden = !now;
+    $('#sb-shells').hidden = !!now;
+    if (!now) return;
+    const song = now.artist ? `${now.title} · ${now.artist}` : now.title;
+    $('#sb-song').textContent = song;
+    $('#sb-song').title = song;
+    $('#sb-toggle').innerHTML = I(now.playing ? 'pause' : 'play');
+    $('#sb-toggle').title = now.playing ? 'Pause' : 'Play';
+  }
+  $('#sb-media [data-op="previous"]').innerHTML = I('prev');
+  $('#sb-media [data-op="next"]').innerHTML = I('next');
+  $('#sb-media').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-op]');
+    if (b) { post({ t: 'media', op: b.dataset.op }); activeTab()?.term.focus(); }
+  });
 
   function renderStatus() {
     const t = activeTab();

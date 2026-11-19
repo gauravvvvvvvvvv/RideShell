@@ -1,8 +1,21 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-20)
 
 First release. Windows 11 is the tested platform.
+
+**Latest fixes and additions**
+* Tool shims (`claude`, `codex`, ...) only apply a profile inside RideShell: a RideShell window,
+  a shell with RideShell's integration loaded, or an explicit `RIDESHELL_PROFILE`. In a plain
+  PowerShell, cmd or bash they run the real tool untouched.
+* New Claude Code / Codex accounts share conversation history with the original folder by
+  default (own sign-in kept; `rideshell history separate` undoes it).
+* App: switching accounts while a program (such as Claude Code) runs in the tab opens the account
+  in a new tab in the same folder, instead of typing the switch command into that program.
+* App: state refreshes and PATH scans run off the UI thread, so terminals never wait for them.
+* App: while Spotify is playing, the status bar shows the song with previous / play-pause / next
+  (Windows media controls: no sign-in, nothing opened; it disappears when Spotify closes).
+* Uninstalling no longer flashes a console window while it removes the program folder.
 
 **Accounts**
 * Profiles with folder bindings, precedence (flag > session > folder > default) and `profile why`

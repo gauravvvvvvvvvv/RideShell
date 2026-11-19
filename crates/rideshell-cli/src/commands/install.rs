@@ -577,16 +577,20 @@ pub mod windows {
         }
     }
 
-    /// A running executable cannot delete its own folder; a detached `cmd`
+    /// A running executable cannot delete its own folder; a hidden `cmd`
     /// waits a moment and removes it after this process exits.
+    ///
+    /// Only CREATE_NO_WINDOW: it gives `cmd` its own *invisible* console,
+    /// which the `ping` used as a delay inherits, and which does not close
+    /// with this window. Adding DETACHED_PROCESS would make Windows ignore
+    /// CREATE_NO_WINDOW; `ping` would then open a visible console window.
     pub fn delete_dir_after_exit(dir: &Path) {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
         let script = format!("ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"", dir.display());
         let _ = std::process::Command::new("cmd")
             .args(["/d", "/c"])
             .raw_arg(&script)
-            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn();
     }
 

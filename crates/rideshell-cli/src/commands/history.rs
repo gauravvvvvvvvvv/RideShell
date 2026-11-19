@@ -146,6 +146,28 @@ fn share(ctx: &Ctx, tool: &str, profile: &str) -> Result<i32> {
     Ok(0)
 }
 
+/// A newly connected Claude Code / Codex account shares conversation history
+/// with the tool's original folder by default, so `claude --resume` keeps
+/// listing the conversations you already had. Its sign-in stays its own;
+/// `history separate` undoes it. Best effort: never fails the connect.
+pub fn share_by_default(ctx: &Ctx, store: &Store, p: &Profile, tool: &str) {
+    let Some(spec) = history::spec(tool) else { return };
+    let Ok((dir, Some(orig))) = folders(ctx, store, p, tool) else { return };
+    if !orig.is_dir() || same(&dir, &orig) || history::is_shared(&spec, &dir) {
+        return;
+    }
+    match history::share(&spec, &dir, &orig) {
+        Ok(_) => ui::hint(format!(
+            "{} sees your existing {tool} conversations (shared with {}; `{} history separate {tool} --profile {}` to keep them apart)",
+            p.name,
+            orig.display(),
+            rideshell_core::brand::BIN_NAME,
+            p.name
+        )),
+        Err(e) => ui::warn(format!("could not share {tool} conversation history: {e:#}")),
+    }
+}
+
 fn separate(ctx: &Ctx, tool: &str, profile: &str) -> Result<i32> {
     let store = ctx.store()?;
     let p = store.require_profile(profile)?;

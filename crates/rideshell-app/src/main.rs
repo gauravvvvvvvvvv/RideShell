@@ -10,6 +10,7 @@
 mod clipboard;
 mod exeicon;
 mod explorer;
+mod media;
 mod pty;
 mod state;
 
@@ -31,6 +32,12 @@ use wry::{WebContext, WebViewBuilder};
 pub enum UserEvent {
     Ipc(String),
     Worked(serde_json::Value),
+    /// Full app state, built off the UI thread.
+    State(serde_json::Value),
+    /// Commands on PATH (`all`, list), scanned off the UI thread.
+    Tools(bool, serde_json::Value),
+    /// Spotify's now playing (or null), sent only when it changes.
+    Media(serde_json::Value),
     Picked(Option<PathBuf>),
     Dropped(Vec<PathBuf>),
     PtyData(u32, Vec<u8>),
@@ -97,25 +104,75 @@ fn serve(request: Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
 #[serde(tag = "t", rename_all = "camelCase")]
 enum Msg {
     State,
-    Spawn { id: u32, profile: Option<String>, cwd: Option<String>, command: Option<String>, cols: u16, rows: u16 },
-    Input { id: u32, data: String },
-    Resize { id: u32, cols: u16, rows: u16 },
-    Kill { id: u32 },
-    Win { op: String, dir: Option<String> },
-    Admin { profile: Option<String>, cwd: Option<String> },
-    CreateProfile { name: String, description: Option<String> },
-    SetDefault { name: String },
-    Open { what: String },
-    Paste { id: u32 },
-    Tools { all: bool },
-    PickFolder { start: Option<String> },
+    Spawn {
+        id: u32,
+        profile: Option<String>,
+        cwd: Option<String>,
+        command: Option<String>,
+        cols: u16,
+        rows: u16,
+    },
+    Input {
+        id: u32,
+        data: String,
+    },
+    Resize {
+        id: u32,
+        cols: u16,
+        rows: u16,
+    },
+    Kill {
+        id: u32,
+    },
+    Win {
+        op: String,
+        dir: Option<String>,
+    },
+    Admin {
+        profile: Option<String>,
+        cwd: Option<String>,
+    },
+    CreateProfile {
+        name: String,
+        description: Option<String>,
+    },
+    SetDefault {
+        name: String,
+    },
+    Open {
+        what: String,
+    },
+    Paste {
+        id: u32,
+    },
+    Tools {
+        all: bool,
+    },
+    PickFolder {
+        start: Option<String>,
+    },
     Worked,
-    ClassicMenu { on: bool },
+    ClassicMenu {
+        on: bool,
+    },
     RestartExplorer,
-    ListDir { path: String },
-    SaveSettings { settings: serde_json::Value },
-    SaveConfig { config: serde_json::Value },
-    Shim { name: String, on: bool },
+    ListDir {
+        path: String,
+    },
+    SaveSettings {
+        settings: serde_json::Value,
+    },
+    SaveConfig {
+        config: serde_json::Value,
+    },
+    Shim {
+        name: String,
+        on: bool,
+    },
+    /// Spotify: "toggle", "next" or "previous".
+    Media {
+        op: String,
+    },
 }
 
 struct Startup {
@@ -213,6 +270,8 @@ fn main() {
 
     let mut sessions: HashMap<u32, pty::Session> = HashMap::new();
     let mut startup = Some(startup);
+    let refresher = Refresher::new(paths.clone(), cli.is_some(), proxy.clone());
+    let media = media::start(proxy.clone());
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -227,6 +286,18 @@ fn main() {
             Event::UserEvent(UserEvent::PtyData(id, bytes)) => {
                 let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
                 let _ = webview.evaluate_script(&format!("RS.data({id},'{b64}')"));
+            }
+            Event::UserEvent(UserEvent::State(mut v)) => {
+                if let Some(s) = startup.take() {
+                    v["startup"] = json!({ "profile": s.profile, "dir": s.dir });
+                }
+                send(&webview, json!({ "t": "state", "state": v }));
+            }
+            Event::UserEvent(UserEvent::Media(now)) => {
+                send(&webview, json!({ "t": "media", "now": now }));
+            }
+            Event::UserEvent(UserEvent::Tools(all, tools)) => {
+                send(&webview, json!({ "t": "tools", "all": all, "tools": tools }));
             }
             Event::UserEvent(UserEvent::Worked(list)) => {
                 send(&webview, json!({ "t": "worked", "folders": list }));
@@ -252,24 +323,7 @@ fn main() {
                     }
                 };
                 match msg {
-                    Msg::State => {
-                        let mut v = serde_json::to_value(state::load(&paths, cli.is_some())).unwrap_or_default();
-                        v["config"] = rideshell_core::config::Config::load(&paths)
-                            .ok()
-                            .and_then(|c| serde_json::to_value(c).ok())
-                            .unwrap_or(serde_json::Value::Null);
-                        v["paths"] = json!({ "config": paths.config_file(), "data": paths.data_dir });
-                        v["build"] = build_info();
-                        v["classicMenu"] = json!(explorer::classic_menu());
-                        v["settings"] = std::fs::read_to_string(settings_file(&paths))
-                            .ok()
-                            .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())
-                            .unwrap_or(serde_json::Value::Null);
-                        if let Some(s) = startup.take() {
-                            v["startup"] = json!({ "profile": s.profile, "dir": s.dir });
-                        }
-                        send(&webview, json!({ "t": "state", "state": v }));
-                    }
+                    Msg::State => refresher.request(),
                     Msg::Spawn { id, profile, cwd, command, cols, rows } => {
                         let Some(cli) = &cli else {
                             send(&webview, json!({ "t": "spawnError", "id": id,
@@ -331,8 +385,7 @@ fn main() {
                         match state::create_profile(&paths, cli.as_deref(), name.trim(), description.as_deref().unwrap_or("").trim()) {
                             Ok(()) => {
                                 send(&webview, json!({ "t": "created", "name": name.trim() }));
-                                let v = serde_json::to_value(state::load(&paths, cli.is_some())).unwrap_or_default();
-                                send(&webview, json!({ "t": "state", "state": v }));
+                                refresher.request();
                             }
                             Err(e) => send(&webview, json!({ "t": "toast", "kind": "error", "text": format!("{e:#}") })),
                         }
@@ -341,8 +394,7 @@ fn main() {
                         if let Err(e) = state::set_default(&paths, &name) {
                             send(&webview, json!({ "t": "toast", "kind": "error", "text": format!("{e:#}") }));
                         }
-                        let v = serde_json::to_value(state::load(&paths, cli.is_some())).unwrap_or_default();
-                        send(&webview, json!({ "t": "state", "state": v }));
+                        refresher.request();
                     }
                     Msg::Open { what } => {
                         let target = match what.as_str() {
@@ -388,6 +440,14 @@ fn main() {
                         send(&webview, json!({ "t": "stateLite", "state": { "classicMenu": explorer::classic_menu() } }));
                     }
                     Msg::RestartExplorer => explorer::restart(),
+                    Msg::Media { op } => {
+                        let cmd = match op.as_str() {
+                            "next" => media::Command::Next,
+                            "previous" => media::Command::Previous,
+                            _ => media::Command::Toggle,
+                        };
+                        let _ = media.send(cmd);
+                    }
                     Msg::Worked => {
                         let p = proxy.clone();
                         let paths2 = paths.clone();
@@ -415,8 +475,13 @@ fn main() {
                         Err(e) => send(&webview, json!({ "t": "dir", "path": path, "error": format!("{e}") })),
                     },
                     Msg::Tools { all } => {
-                        let tools = rideshell_core::tools::scan(Some(&paths.shims_dir()), all);
-                        send(&webview, json!({ "t": "tools", "all": all, "tools": tools }));
+                        let p = proxy.clone();
+                        let shims = paths.shims_dir();
+                        // Scanning every PATH folder takes a moment: off the UI thread.
+                        std::thread::spawn(move || {
+                            let tools = rideshell_core::tools::scan(Some(&shims), all);
+                            let _ = p.send_event(UserEvent::Tools(all, serde_json::to_value(tools).unwrap_or_default()));
+                        });
                     }
                     Msg::Shim { name, on } => {
                         let dir = paths.shims_dir();
@@ -453,6 +518,68 @@ fn main() {
 /// (`RIDESHELL_TELEMETRY_URL`) and a one-line message slot (`RIDESHELL_PROMO_URL`).
 /// Builds without them (the default, and any fork) have neither. Users can
 /// always turn the counter off; `DO_NOT_TRACK` / `RIDESHELL_NO_TELEMETRY` also do.
+/// The full state (profiles, tools on PATH, conversation counts...) without
+/// the one-time startup request. Touches the disk and registry: never call it
+/// on the UI thread.
+fn full_state(paths: &Paths, cli_found: bool) -> serde_json::Value {
+    let mut v = serde_json::to_value(state::load(paths, cli_found)).unwrap_or_default();
+    v["config"] = rideshell_core::config::Config::load(paths)
+        .ok()
+        .and_then(|c| serde_json::to_value(c).ok())
+        .unwrap_or(serde_json::Value::Null);
+    v["paths"] = json!({ "config": paths.config_file(), "data": paths.data_dir });
+    v["build"] = build_info();
+    v["classicMenu"] = json!(explorer::classic_menu());
+    v["settings"] = std::fs::read_to_string(settings_file(paths))
+        .ok()
+        .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())
+        .unwrap_or(serde_json::Value::Null);
+    v
+}
+
+/// Builds the state on a background thread so the terminals never wait for
+/// it. Requests that arrive while one is being built are merged into a
+/// single follow-up build, so refreshes can never pile up.
+struct Refresher {
+    paths: Paths,
+    cli_found: bool,
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+    /// 0 idle, 1 building, 2 building and another build requested.
+    busy: std::sync::Arc<std::sync::atomic::AtomicU8>,
+}
+
+impl Refresher {
+    fn new(paths: Paths, cli_found: bool, proxy: tao::event_loop::EventLoopProxy<UserEvent>) -> Self {
+        Self { paths, cli_found, proxy, busy: Default::default() }
+    }
+
+    fn request(&self) {
+        use std::sync::atomic::Ordering::SeqCst;
+        // Idle -> start a build; building -> ask it to go once more.
+        loop {
+            match self.busy.compare_exchange(0, 1, SeqCst, SeqCst) {
+                Ok(_) => break,
+                Err(2) => return,
+                Err(_) => {
+                    if self.busy.compare_exchange(1, 2, SeqCst, SeqCst).is_ok() {
+                        return;
+                    }
+                }
+            }
+        }
+        let (paths, cli_found, proxy, busy) =
+            (self.paths.clone(), self.cli_found, self.proxy.clone(), self.busy.clone());
+        std::thread::spawn(move || loop {
+            let v = full_state(&paths, cli_found);
+            let _ = proxy.send_event(UserEvent::State(v));
+            // 2 -> 1: build once more; 1 -> 0: done.
+            if busy.fetch_sub(1, SeqCst) == 1 {
+                break;
+            }
+        });
+    }
+}
+
 fn build_info() -> serde_json::Value {
     let off = |k: &str| std::env::var(k).is_ok_and(|v| !v.is_empty() && v != "0");
     json!({

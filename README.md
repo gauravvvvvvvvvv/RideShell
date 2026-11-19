@@ -46,7 +46,8 @@
 
 ## Install
 
-**Windows 10/11:** download `rideshell.exe` and double-click it. It installs for your user,
+**Windows 10/11:** download `rideshell.exe` from the
+[latest release](https://github.com/gauravvvvvvvvvv/RideShell/releases/latest) and double-click it. It installs for your user,
 **without admin rights**, and adds:
 
 * the *RideShell* and *RideShell (Administrator)* Start menu entries, and a Windows Terminal profile;
@@ -164,14 +165,16 @@ rideshell auth login custom-vercel --profile work
 ## Your Claude Code and Codex conversations
 
 Claude Code and Codex keep your conversations (what `claude --resume` lists) in their config
-folder. A new account starts with its own folder, so it starts without your old conversations.
-Pick, per account:
+folder. A new account keeps its own sign-in but **shares conversation history** with the
+original folder by default, so `claude --resume` still lists the conversations you already had.
+Per account you can change that:
 
 * **Use the original folder** (`~/.claude`, `~/.codex`): the account uses your existing
   sign-in **and** all your conversations. Conversations it had in its own folder are moved over,
   and nothing is overwritten. Your *first* account does this automatically.
-* **Share history**: the account keeps its **own** sign-in but sees the same conversations
-  (a folder link, so no copies).
+* **Share history** (the default for new accounts): the account keeps its **own** sign-in but
+  sees the same conversations (a folder link, so no copies).
+* **Separate**: the account gets its own, empty history (`rideshell history separate`).
 
 ```powershell
 rideshell history status                       # where each account's conversations live

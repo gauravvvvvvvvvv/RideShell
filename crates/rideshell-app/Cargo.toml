@@ -29,6 +29,8 @@ dirs.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+# Media controls (Spotify in the status bar). Same version wry already uses.
+windows = { version = "0.62", default-features = false, features = ["std", "Media_Control"] }
 winreg.workspace = true
 
 [build-dependencies]
