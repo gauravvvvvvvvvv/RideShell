@@ -30,6 +30,7 @@ use wry::{WebContext, WebViewBuilder};
 
 pub enum UserEvent {
     Ipc(String),
+    Worked(serde_json::Value),
     Picked(Option<PathBuf>),
     Dropped(Vec<PathBuf>),
     PtyData(u32, Vec<u8>),
@@ -108,6 +109,7 @@ enum Msg {
     Paste { id: u32 },
     Tools { all: bool },
     PickFolder { start: Option<String> },
+    Worked,
     ClassicMenu { on: bool },
     RestartExplorer,
     ListDir { path: String },
@@ -225,6 +227,9 @@ fn main() {
             Event::UserEvent(UserEvent::PtyData(id, bytes)) => {
                 let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
                 let _ = webview.evaluate_script(&format!("RS.data({id},'{b64}')"));
+            }
+            Event::UserEvent(UserEvent::Worked(list)) => {
+                send(&webview, json!({ "t": "worked", "folders": list }));
             }
             Event::UserEvent(UserEvent::Picked(Some(p))) => {
                 send(&webview, json!({ "t": "picked", "path": p }));
@@ -383,6 +388,15 @@ fn main() {
                         send(&webview, json!({ "t": "stateLite", "state": { "classicMenu": explorer::classic_menu() } }));
                     }
                     Msg::RestartExplorer => explorer::restart(),
+                    Msg::Worked => {
+                        let p = proxy.clone();
+                        let paths2 = paths.clone();
+                        // Reading other tools' lists can take a moment: off the UI thread.
+                        std::thread::spawn(move || {
+                            let list = state::worked_folders(&paths2);
+                            let _ = p.send_event(UserEvent::Worked(serde_json::to_value(list).unwrap_or_default()));
+                        });
+                    }
                     Msg::PickFolder { start } => {
                         // The dialog is modal; run it off the event loop so the UI keeps painting.
                         let p = proxy.clone();

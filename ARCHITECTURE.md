@@ -243,6 +243,36 @@ login).
 are separated per config directory has not been verified, so multi-account Claude Code on
 macOS is unverified until then. API-key accounts (`ANTHROPIC_API_KEY` secret) are unaffected.
 
+### The catalogue (`providers/catalog.rs`)
+
+* **Account folders** (`AccountDirProvider`) set one or more variables to the account's
+  folder or to a file inside it. Examples: `CLAUDE_CONFIG_DIR`, `AZURE_CONFIG_DIR`,
+  `CLOUDSDK_CONFIG`, `DOCKER_CONFIG`, `GLAB_CONFIG_DIR`, `HF_HOME`, and
+  `AWS_CONFIG_FILE` + `AWS_SHARED_CREDENTIALS_FILE`, `KUBECONFIG`, `NPM_CONFIG_USERCONFIG`.
+* **API tokens** (`TokenProvider`) contribute no variables of their own. The token is a
+  profile secret, prompted for by `identity set`, and is injected like any other secret.
+* **Custom** (`CustomProvider`) is stored as identity `custom-<tool>` with
+  `tool`/`folder_var`/`file_var`/`file`.
+* `auto_attach` marks the tools every new profile gets automatically (Claude Code, Codex,
+  GitHub CLI).
+
+### Conversation history (`history.rs`)
+
+* *Adopt* moves `projects/` (Claude) or `sessions/` (Codex), plus `history.jsonl`, into the
+  original folder. It never overwrites, and prompt-history lines are merged. Then it sets
+  `config_dir`.
+* *Share* first merges, then replaces the account's conversation folder with a junction
+  (Windows; a symlink elsewhere) to the original. `history.jsonl` becomes a hard link when
+  both are on the same volume.
+* *Separate* removes the links and keeps a private copy of the prompt history.
+* Sign-in files are never touched.
+
+### Recently worked (`recent.rs`)
+
+It reads VS Code's and Cursor's `state.vscdb` (`history.recentlyOpenedPathsList`, opened
+read-only) and the `cwd` recorded in the first lines of recent Claude Code and Codex
+conversation files. Only existing folders are kept, newest first. Everything stays local.
+
 ### Git
 
 `GIT_AUTHOR_*` / `GIT_COMMITTER_*` and `GIT_SSH_COMMAND`. No git config file is modified.

@@ -28,9 +28,15 @@
     const img = path ? `<img src="/exe-icon?p=${encodeURIComponent(path)}" alt="" draggable="false" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()">` : '';
     return `<span class="aicon ${cls}" style="--ac:${accentOf(key)}">${I('app')}${img}</span>`;
   }
-  const toolIcon = (tool, cls) => exeIcon(RS.state?.toolIcons?.[tool], tool, cls);
-  const TOOL_NAMES = { claude: 'Claude Code', codex: 'Codex', gh: 'GitHub CLI', git: 'Git' };
-  const LOGIN_TOOLS = new Set(['claude', 'codex', 'gh']);
+  // `t` is a connected tool ({id, tool, ...}) or a provider id.
+  function toolIcon(t, cls) {
+    const id = typeof t === 'string' ? t : t.id;
+    const cmd = typeof t === 'string' ? t : t.tool;
+    const prov = (RS.state?.providers || []).find((p) => p.id === id);
+    const fromTools = tools.list.find((x) => x.name.toLowerCase() === String(cmd).toLowerCase());
+    return exeIcon(RS.state?.toolIcons?.[id] || prov?.icon || fromTools?.path, cmd || id, cls);
+  }
+  const toolName = (id) => (RS.state?.providers || []).find((p) => p.id === id)?.name || id;
 
 
   const RS = window.RS = {
@@ -60,6 +66,7 @@
       case 'picked': openTab({ cwd: m.path }); break;
       case 'dropped': onDropped(m.items); break;
       case 'dir': onDir(m); break;
+      case 'worked': RS.worked = m.folders || []; if (!$('#pane-files').hidden) renderFolderLists(); break;
       case 'paste': { const t = RS.tabs.get(m.id); if (t && !t.ended) t.term.paste(m.text); break; }
     }
   };
@@ -235,12 +242,13 @@
     for (const p of profiles) {
       const c = colorOf(p.name);
       const row = el('div', 'profile' + (p.name === current ? ' active' : ''));
+      const chips = p.tools.slice(0, 8).map((t) => `<span title="${esc(t.name)}">${toolIcon(t, 'tiny')}</span>`).join('');
       row.innerHTML = `
         <div class="avatar" style="--c:${c.grad}">${esc(p.name.slice(0, 1))}</div>
         <div class="meta">
           <div class="name">${esc(p.name)}${p.isDefault ? '<span class="pill">default</span>' : ''}${p.name === current ? '<span class="pill live">active</span>' : ''}</div>
           ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ''}
-          ${p.tools.length ? `<div class="tools">${p.tools.map((t) => `<span title="${esc(TOOL_NAMES[t] || t)}">${toolIcon(t, 'tiny')}</span>`).join('')}${p.secrets ? `<span class="keychip" title="${p.secrets} API key(s)">${I('key')}</span>` : ''}</div>` : ''}
+          ${p.tools.length ? `<div class="tools">${chips}${p.tools.length > 8 ? `<span class="more">+${p.tools.length - 8}</span>` : ''}</div>` : ''}
         </div>
         <button class="open" title="New tab as ${esc(p.name)}">${I('plus')}</button>`;
       row.addEventListener('click', (e) => {
@@ -252,38 +260,156 @@
 
       if (p.name === current) {
         const d = el('div', 'details');
-        for (const tool of p.tools) {
-          const r = el('div', 'tool-row', `${toolIcon(tool, 'tiny')}<span class="t-name">${esc(TOOL_NAMES[tool] || tool)}</span>`);
-          if (LOGIN_TOOLS.has(tool)) {
-            const login = el('button', '', 'Sign in'); login.title = `Sign ${p.name} in to ${TOOL_NAMES[tool]}`;
-            login.onclick = () => signIn(p.name, tool);
-            const status = el('button', '', 'Status');
-            status.onclick = () => runInNewTab(`rideshell auth status ${tool} --profile ${p.name}`, { profile: p.name, title: `Status · ${TOOL_NAMES[tool]}`, icon: 'pulse' });
-            r.append(status, login);
+        for (const t of p.tools) {
+          const badge = t.history === 'original' ? '<i class="hb" title="Uses your original folder: its sign-in and all your conversations"></i>'
+            : t.history === 'shared' ? '<i class="hb shared" title="Own sign-in, shared conversation history"></i>' : '';
+          const r = el('div', 'tool-row', `${toolIcon(t, 'tiny')}<span class="t-name" title="${esc(t.summary)}">${esc(t.name)}</span>${badge}`);
+          if (t.login) {
+            const login = el('button', '', 'Sign in');
+            login.title = `Sign ${p.name} in to ${t.name}`;
+            login.onclick = () => signIn(p.name, t.id, t.name);
+            r.appendChild(login);
+          } else if (t.keys.length) {
+            const key = el('button', '', 'Key');
+            key.title = `Set ${p.name}'s ${t.name} key`;
+            key.onclick = () => changeKey(p, t);
+            r.appendChild(key);
           }
+          const more = el('button', 'tmore', '⋯');
+          more.title = 'More';
+          more.onclick = (e) => { const rc = e.currentTarget.getBoundingClientRect(); toolMenu(p, t, rc.left, rc.bottom + 4); };
+          r.appendChild(more);
+          r.addEventListener('contextmenu', (e) => { e.preventDefault(); toolMenu(p, t, e.clientX, e.clientY); });
           d.appendChild(r);
         }
-        const missing = RS.state.providers.filter((pr) => !p.tools.includes(pr.id));
-        if (missing.length) {
-          const add = el('button', 'add-tool', `${I('plus')}<span>Connect a tool account</span>`);
-          add.onclick = (e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            menu(missing.map((pr) => ({ html: toolIcon(pr.id, 'tiny'), label: pr.name, run: () => runInNewTab(`rideshell identity set ${p.name} ${pr.id}`, { profile: p.name, title: `Connect · ${pr.name}`, icon: 'key' }) })), rect.left, rect.bottom + 4);
-          };
-          d.appendChild(add);
-        }
+        const add = el('button', 'add-tool', `${I('plus')}<span>Connect a tool</span>`);
+        add.onclick = () => openConnect(p);
+        d.appendChild(add);
         box.appendChild(d);
       }
     }
   }
 
+  function changeKey(p, t) {
+    const keys = t.keys.join(' ');
+    runInNewTab(`rideshell identity set ${p.name} ${t.id} ${keys}`, { profile: p.name, title: `Key · ${t.name}`, icon: 'key' });
+  }
+
+  // The per-tool menu: everything about one tool account lives here.
+  function toolMenu(p, t, x, y) {
+    const items = [];
+    if (t.login) items.push({ html: toolIcon(t, 'tiny'), label: `Sign in to ${t.name}`, run: () => signIn(p.name, t.id, t.name) });
+    if (t.status) items.push({ icon: 'pulse', label: 'Check sign-in status', run: () => runInNewTab(`rideshell auth status ${t.id} --profile ${p.name}`, { profile: p.name, title: `Status · ${t.name}`, icon: 'pulse' }) });
+    if (t.keys.length) items.push({ icon: 'key', label: t.kind === 'token' ? 'Change API key' : 'Set an API key instead of signing in', run: () => changeKey(p, t) });
+    if (t.history) {
+      items.push('-');
+      const n = t.conversations ?? 0;
+      if (t.history !== 'original') {
+        items.push({ icon: 'folder', label: `Use original ${t.name} folder (sign-in + all conversations)`, run: () => historyAction('adopt', p, t) });
+      }
+      if (t.history === 'own') items.push({ icon: 'branch', label: 'Share conversation history (keep own sign-in)', run: () => historyAction('share', p, t) });
+      if (t.history === 'shared') items.push({ icon: 'close', label: 'Stop sharing history', run: () => historyAction('separate', p, t) });
+      items.push({ icon: 'doc', label: `${n} conversation${n === 1 ? '' : 's'} here · details`, run: () => runInNewTab('rideshell history status', { title: 'History', icon: 'doc' }) });
+    }
+    items.push('-');
+    items.push({ icon: 'close', label: `Disconnect ${t.name}`, run: () => {
+      if (confirm(`Disconnect ${t.name} from ${p.name}? Its sign-in folder and keys are kept on disk.`)) {
+        runInNewTab(`rideshell identity unset ${p.name} ${t.id}`, { profile: p.name, title: `Disconnect · ${t.name}`, icon: 'close' });
+      }
+    } });
+    menu(items, x, y);
+  }
+
+  function historyAction(action, p, t) {
+    const text = {
+      adopt: `${p.name} will use your original ${t.name} folder: the sign-in there and all its conversations. Conversations ${p.name} had in its own folder are moved there first. Continue?`,
+      share: `${p.name} keeps its own ${t.name} sign-in but will see the same conversations as your original folder. Its own conversations are added to them. Continue?`,
+      separate: `${p.name} gets its own ${t.name} history again. The shared conversations stay where they are. Continue?`,
+    }[action];
+    if (!confirm(text)) return;
+    const yes = action === 'adopt' ? ' --yes' : '';
+    runInNewTab(`rideshell history ${action} ${t.id} --profile ${p.name}${yes}`, { profile: p.name, title: `History · ${t.name}`, icon: 'doc' });
+    setTimeout(() => post({ t: 'state' }), 2500);
+  }
+
+  // ----- connect a tool -------------------------------------------------------------
+
+  let connecting = null;
+  function openConnect(p) {
+    connecting = p;
+    $('#connect-title').textContent = `Connect a tool to ${p.name}`;
+    $('#connect-input').value = '';
+    $('#connect-custom').hidden = true;
+    $('#connect-list').hidden = false;
+    $('#connect').hidden = false;
+    renderConnect();
+    setTimeout(() => $('#connect-input').focus(), 20);
+  }
+  function closeConnect() { $('#connect').hidden = true; connecting = null; activeTab()?.term.focus(); }
+
+  function renderConnect() {
+    const p = connecting;
+    if (!p) return;
+    const q = $('#connect-input').value.trim().toLowerCase();
+    const have = new Set(p.tools.map((t) => t.id));
+    const list = $('#connect-list');
+    list.innerHTML = '';
+    const all = (RS.state?.providers || []).filter((pr) => pr.id !== 'custom' && !have.has(pr.id));
+    const match = (pr) => !q || pr.name.toLowerCase().includes(q) || pr.tool.toLowerCase().includes(q) || pr.category.toLowerCase().includes(q);
+    const groups = new Map();
+    for (const pr of all.filter(match).sort((a, b) => (b.installed - a.installed) || a.name.localeCompare(b.name))) {
+      const g = pr.installed ? 'Installed on this PC' : pr.category;
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(pr);
+    }
+    const order = ['Installed on this PC', ...[...groups.keys()].filter((g) => g !== 'Installed on this PC').sort()];
+    for (const g of order) {
+      if (!groups.has(g)) continue;
+      list.appendChild(el('div', 'p-group', esc(g)));
+      for (const pr of groups.get(g)) {
+        const how = { token: 'API key', identity: 'name & e-mail', account: 'own sign-in' }[pr.kind] || '';
+        const it = el('div', 'c-item', `${exeIcon(pr.icon, pr.tool, 'small')}<span class="c-name">${esc(pr.name)}<small>${esc(pr.category)}</small></span><span class="c-how">${how}</span>`);
+        it.title = pr.isolation;
+        it.onclick = () => {
+          closeConnect();
+          runInNewTab(`rideshell identity set ${p.name} ${pr.id}`, { profile: p.name, title: `Connect · ${pr.name}`, icon: 'key' });
+          setTimeout(() => post({ t: 'state' }), 3000);
+        };
+        list.appendChild(it);
+      }
+    }
+    const other = el('div', 'c-item other', `<span class="aicon small plain">${I('plus')}</span><span class="c-name">Any other tool…<small>name it, and the setting it reads</small></span>`);
+    other.onclick = () => { $('#connect-list').hidden = true; $('#connect-custom').hidden = false; $('#cc-tool').value = q; setTimeout(() => $('#cc-tool').focus(), 20); };
+    list.appendChild(other);
+  }
+
+  $('#connect-input').addEventListener('input', renderConnect);
+  $('#connect-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeConnect(); });
+  $('#connect').addEventListener('mousedown', (e) => { if (e.target.id === 'connect') closeConnect(); });
+  $('#connect-close').onclick = closeConnect;
+  $('#cc-back').onclick = () => { $('#connect-custom').hidden = true; $('#connect-list').hidden = false; };
+  $('#connect-custom').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const p = connecting;
+    const tool = $('#cc-tool').value.trim();
+    const folder = $('#cc-folder').value.trim();
+    const key = $('#cc-key').value.trim();
+    if (!p || !tool) return;
+    let cmd = `rideshell identity set ${p.name} custom tool=${tool}`;
+    if (folder) cmd += ` folder_var=${folder}`;
+    if (key) cmd += `; rideshell secret set ${key} --profile ${p.name}`;
+    closeConnect();
+    runInNewTab(cmd, { profile: p.name, title: `Connect · ${tool}`, icon: 'key' });
+    setTimeout(() => post({ t: 'state' }), 3000);
+  });
+
   // ----- sign-in guide -------------------------------------------------------------
 
   let signing = null;
-  function signIn(profile, tool) {
+  function signIn(profile, tool, displayName) {
     signing = { profile, tool };
-    const name = TOOL_NAMES[tool] || tool;
-    const others = (RS.state?.profiles || []).filter((p) => p.name !== profile && p.tools.includes(tool)).map((p) => p.name);
+    const name = displayName || toolName(tool);
+    const others = (RS.state?.profiles || []).filter((p) => p.name !== profile && p.tools.some((t) => t.id === tool)).map((p) => p.name);
     $('#si-title').textContent = `Sign ${profile} in to ${name}`;
     $('#si-text').innerHTML = `The login is saved for <b>${esc(profile)}</b> only${others.length ? `; ${others.map((o) => `<b>${esc(o)}</b>`).join(', ')} keep${others.length === 1 ? 's' : ''} ${others.length === 1 ? 'its' : 'their'} own` : ''}.`;
     const tips = [
@@ -308,23 +434,32 @@
     if (email && tool === 'claude') cmd += ` --email '${email.replace(/'/g, "''")}'`;
     $('#signin').hidden = true;
     signing = null;
-    runInNewTab(cmd, { profile, title: `Sign in · ${TOOL_NAMES[tool] || tool}`, icon: 'login' });
+    runInNewTab(cmd, { profile, title: `Sign in · ${toolName(tool)}`, icon: 'login' });
   });
   $('#si-cancel').onclick = () => { $('#signin').hidden = true; signing = null; activeTab()?.term.focus(); };
   $('#signin').addEventListener('mousedown', (e) => { if (e.target.id === 'signin') { $('#signin').hidden = true; signing = null; } });
 
   function profileMenu(p, x, y) {
     const items = [
-      { icon: 'check', label: `Use in this tab`, run: () => switchAccount(p.name) },
-      { icon: 'plus', label: `New tab as ${p.name}`, run: () => openTab({ profile: p.name }) },
-      { icon: 'star', label: 'Make default', run: () => post({ t: 'setDefault', name: p.name }) },
-      '-',
+      { icon: 'check', label: 'Use in this tab', run: () => switchAccount(p.name) },
+      { icon: 'plus', label: 'Open a new tab', run: () => openTab({ profile: p.name }) },
     ];
-    for (const tool of p.tools.filter((t) => LOGIN_TOOLS.has(t))) {
-      items.push({ icon: 'login', label: `Sign in to ${TOOL_NAMES[tool]}`, run: () => signIn(p.name, tool) });
-    }
-    items.push({ icon: 'key', label: 'Add an API key…', run: () => runInNewTab(`rideshell secret list; Write-Host ''; Write-Host 'Example: rideshell secret set ANTHROPIC_API_KEY --profile ${p.name}'`, { profile: p.name, title: 'API keys', icon: 'key' }) });
-    items.push({ icon: 'user', label: 'Show details', run: () => runInNewTab(`rideshell profile show ${p.name}`, { profile: p.name, title: p.name, icon: 'user' }) });
+    if (!p.isDefault) items.push({ icon: 'star', label: 'Make default', run: () => post({ t: 'setDefault', name: p.name }) });
+    items.push('-');
+    items.push({ icon: 'user', label: 'Rename…', run: () => {
+      const n = prompt(`New name for ${p.name}:`, p.name);
+      if (n && n.trim() && n.trim() !== p.name) {
+        runInNewTab(`rideshell profile rename ${p.name} ${n.trim()}`, { title: 'Rename account', icon: 'user' });
+        setTimeout(() => post({ t: 'state' }), 2500);
+      }
+    } });
+    items.push({ icon: 'doc', label: 'Details', run: () => runInNewTab(`rideshell profile show ${p.name}`, { profile: p.name, title: p.name, icon: 'user' }) });
+    items.push({ icon: 'close', label: 'Delete account…', run: () => {
+      if (confirm(`Delete the account ${p.name}? Its settings and keys in RideShell are removed. Tool sign-in folders stay on disk.`)) {
+        runInNewTab(`rideshell profile delete ${p.name} --force`, { title: 'Delete account', icon: 'close' });
+        setTimeout(() => post({ t: 'state' }), 2500);
+      }
+    } });
     menu(items, x, y);
   }
 
@@ -563,10 +698,23 @@
     }
     renderFavorites();
     const v = SET().values;
+    // Recently worked: folders used in RideShell, plus VS Code / Cursor / Claude Code / Codex.
     const rec = $('#recent-folders');
     rec.innerHTML = '';
-    for (const p of (v.recentFolders || []).slice(0, 6)) rec.appendChild(folderRow(p));
-    $('#recent-sec').hidden = !(v.recentFolders || []).length;
+    const seenF = new Set();
+    const merged = [];
+    for (const p of (v.recentFolders || []).slice(0, 4)) merged.push({ path: p, source: 'RideShell' });
+    for (const f of RS.worked || []) merged.push(f);
+    for (const f of merged) {
+      const k = norm(f.path);
+      if (seenF.has(k)) continue;
+      seenF.add(k);
+      const r = folderRow(f.path, { title: `last used in ${f.source}` });
+      r.querySelector('.fname').insertAdjacentHTML('afterend', `<em class="fsrc">${esc(f.source)}</em>`);
+      rec.appendChild(r);
+      if (seenF.size >= 10) break;
+    }
+    $('#recent-sec').hidden = !seenF.size;
   }
 
   function renderDir() {
@@ -622,6 +770,7 @@
     $('#pane-home').hidden = name !== 'home';
     $('#pane-files').hidden = name !== 'files';
     if (name === 'files') {
+      post({ t: 'worked' });
       renderFolderLists();
       const cwd = activeTab()?.live.cwd || RS.state?.home;
       if (cwd) post({ t: 'listDir', path: cwd }); else renderDir();
@@ -687,9 +836,10 @@
     }
     const cur = activeProfile();
     const cp = (RS.state?.profiles || []).find((p) => p.name === cur);
-    for (const tool of (cp?.tools || []).filter((t) => LOGIN_TOOLS.has(t))) {
-      add('Accounts', 'login', `Sign ${cur} in to ${TOOL_NAMES[tool]}`, () => signIn(cur, tool));
+    for (const t of (cp?.tools || []).filter((t) => t.login)) {
+      acts.push({ group: 'Accounts', html: toolIcon(t, 'tiny'), label: `Sign ${cur} in to ${t.name}`, run: () => signIn(cur, t.id, t.name) });
     }
+    if (cp) add('Accounts', 'plus', `Connect a tool to ${cur}…`, () => openConnect(cp));
     if (!RS.state?.elevated) add('System', 'shield', 'Open as Administrator', openAdmin);
     add('General', 'terminal', 'Browse installed tools', openTools);
     if (q2().length >= 2) for (const t of tools.list.filter((t) => t.name.toLowerCase().startsWith(q2().toLowerCase())).slice(0, 8)) {
@@ -790,9 +940,9 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('.xterm')) return;
-    if (e.key === 'Escape') { hideMenu(); if (!$('#signin').hidden) { $('#signin').hidden = true; signing = null; } if (!$('#modal').hidden) { $('#modal').hidden = true; } if (!$('#tools').hidden) closeTools(); }
+    if (e.key === 'Escape') { hideMenu(); if (!$('#signin').hidden) { $('#signin').hidden = true; signing = null; } if (!$('#connect').hidden) closeConnect(); if (!$('#modal').hidden) { $('#modal').hidden = true; } if (!$('#tools').hidden) closeTools(); }
     const act = shortcut(e);
-    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden && $('#signin').hidden) { e.preventDefault(); act(); }
+    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden && $('#signin').hidden && $('#connect').hidden) { e.preventDefault(); act(); }
   });
 
   function zoom(step) {
@@ -852,6 +1002,8 @@
   $('#admin-btn').onclick = openAdmin;
   $('#settings-btn .i').innerHTML = I('gear');
   $('#settings-btn').onclick = () => SET().open();
+  $('#connect-close').innerHTML = I('close');
+  $('#connect .palette-input .i').innerHTML = I('search');
   $('#all-tools-btn .i').innerHTML = I('terminal');
   $('#all-tools-btn').onclick = openTools;
   $('#tools-close').innerHTML = I('close');

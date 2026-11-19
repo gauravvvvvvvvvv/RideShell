@@ -90,8 +90,10 @@ rideshell run --profile personal -- claude  # one command, one account
 * **Files:**
   * **Open folder…** opens a tab in any folder. **Favorites** are starred with ☆.
   * **Places** include project folders, which open as their account.
-  * **Recent** folders, plus a **Browse** list that follows the current tab: click to look
-    inside, **cd** to go there, and click a file to insert its path.
+  * **Recently worked** folders: from RideShell, and also from VS Code, Cursor, Claude Code
+    and Codex (read locally, never sent anywhere).
+  * A **Browse** list that follows the current tab: click to look inside, **cd** to go there,
+    and click a file to insert its path.
   * Drag a folder onto the window, use **Open in RideShell** in Explorer, or type
     `rideshell` in Explorer's address bar.
 * **Command palette** (`Ctrl+K`):
@@ -125,6 +127,47 @@ Each line is checked when you press Enter:
 * bash means Git Bash. zsh-style lines run in bash too, since zsh does not exist on Windows.
 * It's real PowerShell (7 if installed, else 5.1) with your own profile, so modules, completion,
   history and interactive tools behave exactly as usual.
+
+## Connect any tool
+
+Each account can connect **any** command-line tool. Every tool is kept separate the way that
+tool itself supports:
+
+| How | Tools |
+|---|---|
+| **Own sign-in** (a separate config folder or file per account) | Claude Code, Codex, GitHub CLI, GitLab CLI, AWS CLI, Azure CLI, Google Cloud CLI, kubectl, Docker, npm, Hugging Face |
+| **Own API key** (stored in the OS credential store) | Gemini CLI, Cloudflare Wrangler, Netlify, Supabase, Heroku, Railway, Fly.io, DigitalOcean, Stripe CLI, ngrok, Firebase |
+| **Name & e-mail** | Git (commit identity and SSH key) |
+| **Any other tool** | You name the command and the variable it reads for its config folder and/or API key |
+
+In RideShell App use **Connect a tool** under an account. Each connected tool has a **⋯** menu
+with Sign in, Status, API key, conversation history and Disconnect. From the command line:
+
+```powershell
+rideshell identity set work aws                                  # own AWS config + credentials
+rideshell identity set work wrangler                             # asks for the Cloudflare API token
+rideshell identity set work custom tool=vercel folder_var=VERCEL_HOME
+```
+
+## Your Claude Code and Codex conversations
+
+Claude Code and Codex keep your conversations (what `claude --resume` lists) in their config
+folder. A new account starts with its own folder, so it starts without your old conversations.
+Pick, per account:
+
+* **Use the original folder** (`~/.claude`, `~/.codex`): the account uses your existing
+  sign-in **and** all your conversations. Conversations it had in its own folder are moved over,
+  and nothing is overwritten. Your *first* account does this automatically.
+* **Share history**: the account keeps its **own** sign-in but sees the same conversations
+  (a folder link, so no copies).
+
+```powershell
+rideshell history status                       # where each account's conversations live
+rideshell history adopt claude --profile personal
+rideshell history share claude --profile work  # `separate` undoes it
+```
+
+Only conversation files are moved or linked. Sign-in files are never touched.
 
 ## Accounts, keys and any tool
 

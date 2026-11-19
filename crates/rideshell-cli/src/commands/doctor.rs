@@ -175,12 +175,17 @@ pub fn run(ctx: &Ctx) -> Result<i32> {
     }
 
     // Tools.
-    for p in providers::registry() {
-        let d = p.detect();
-        match d.version.or(d.path.map(|p| p.display().to_string())) {
-            Some(v) => r.ok(format!("{}: {v}", p.display_name())),
-            None => ui::hint(format!("{}: not installed", p.display_name())),
-        }
+    // Installed catalogue tools (a PATH lookup each; nothing is run).
+    let shims_dir = ctx.paths.shims_dir();
+    let installed: Vec<&str> = providers::registry()
+        .iter()
+        .filter(|p| !p.tool().is_empty() && rideshell_core::shims::find_real(p.tool(), Some(&shims_dir)).is_ok())
+        .map(|p| p.display_name())
+        .collect();
+    if installed.is_empty() {
+        ui::hint("no catalogue tools found on PATH");
+    } else {
+        r.ok(format!("tools found: {}", installed.join(", ")));
     }
 
     anstream::println!();

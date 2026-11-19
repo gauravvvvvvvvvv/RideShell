@@ -28,13 +28,17 @@ pub struct AccountDirProvider {
     pub id: &'static str,
     pub display_name: &'static str,
     pub tool: &'static str,
-    /// Environment variable selecting the config directory.
-    pub dir_env: &'static str,
+    /// Environment variables pointing into the account's directory:
+    /// `(VAR, "")` selects the directory itself, `(VAR, "file")` a file in it.
+    pub vars: &'static [(&'static str, &'static str)],
     pub secrets: &'static [SecretSpec],
-    pub login: &'static [&'static str],
-    pub logout: &'static [&'static str],
-    pub status: &'static [&'static str],
+    pub login: Option<&'static [&'static str]>,
+    pub logout: Option<&'static [&'static str]>,
+    pub status: Option<&'static [&'static str]>,
     pub isolation: &'static str,
+    pub category: &'static str,
+    /// Every new profile gets its own account automatically.
+    pub auto_attach: bool,
 }
 
 const SETTINGS: &[SettingSpec] = &[
@@ -52,40 +56,46 @@ pub const CLAUDE: AccountDirProvider = AccountDirProvider {
     id: "claude",
     display_name: "Claude Code",
     tool: "claude",
-    dir_env: "CLAUDE_CONFIG_DIR",
+    vars: &[("CLAUDE_CONFIG_DIR", "")],
     secrets: &[SecretSpec {
         key: "api_key",
         env: "ANTHROPIC_API_KEY",
         description: "Anthropic API key (instead of signing in with a Claude account)",
     }],
-    login: &["auth", "login"],
-    logout: &["auth", "logout"],
-    status: &["auth", "status"],
+    login: Some(&["auth", "login"]),
+    logout: Some(&["auth", "logout"]),
+    status: Some(&["auth", "status"]),
     isolation: "separate config directory per account (CLAUDE_CONFIG_DIR): login, settings, history and MCP config are per account",
+    category: "AI coding agents",
+    auto_attach: true,
 };
 
 pub const CODEX: AccountDirProvider = AccountDirProvider {
     id: "codex",
     display_name: "Codex CLI",
     tool: "codex",
-    dir_env: "CODEX_HOME",
+    vars: &[("CODEX_HOME", "")],
     secrets: &[SecretSpec { key: "api_key", env: "OPENAI_API_KEY", description: "OpenAI API key" }],
-    login: &["login"],
-    logout: &["logout"],
-    status: &["login", "status"],
+    login: Some(&["login"]),
+    logout: Some(&["logout"]),
+    status: Some(&["login", "status"]),
     isolation: "separate CODEX_HOME per account: auth.json, config and history are per account",
+    category: "AI coding agents",
+    auto_attach: true,
 };
 
 pub const GH: AccountDirProvider = AccountDirProvider {
     id: "gh",
     display_name: "GitHub CLI",
     tool: "gh",
-    dir_env: "GH_CONFIG_DIR",
+    vars: &[("GH_CONFIG_DIR", "")],
     secrets: &[SecretSpec { key: "token", env: "GH_TOKEN", description: "GitHub token (instead of gh auth login)" }],
-    login: &["auth", "login"],
-    logout: &["auth", "logout"],
-    status: &["auth", "status"],
+    login: Some(&["auth", "login"]),
+    logout: Some(&["auth", "logout"]),
+    status: Some(&["auth", "status"]),
     isolation: "separate GH_CONFIG_DIR per account (gh may keep the token itself in the OS credential store, keyed by host and user)",
+    category: "Code hosting",
+    auto_attach: true,
 };
 
 impl AccountDirProvider {
@@ -122,6 +132,12 @@ impl Provider for AccountDirProvider {
     }
     fn description(&self) -> &'static str {
         "multiple accounts, each with its own login"
+    }
+    fn category(&self) -> &'static str {
+        self.category
+    }
+    fn auto_attach(&self) -> bool {
+        self.auto_attach
     }
     fn tool(&self) -> &'static str {
         self.tool
@@ -167,8 +183,12 @@ impl Provider for AccountDirProvider {
     }
 
     fn environment(&self, settings: &Settings, ctx: &ProviderContext) -> Result<BTreeMap<String, String>> {
+        let dir = self.config_dir(settings, ctx);
         let mut env = BTreeMap::new();
-        env.insert(self.dir_env.to_string(), self.config_dir(settings, ctx).to_string_lossy().into_owned());
+        for (var, file) in self.vars {
+            let path = if file.is_empty() { dir.clone() } else { dir.join(file) };
+            env.insert(var.to_string(), path.to_string_lossy().into_owned());
+        }
         Ok(env)
     }
 
@@ -184,13 +204,13 @@ impl Provider for AccountDirProvider {
     }
 
     fn login_args(&self) -> Option<&'static [&'static str]> {
-        Some(self.login)
+        self.login
     }
     fn logout_args(&self) -> Option<&'static [&'static str]> {
-        Some(self.logout)
+        self.logout
     }
     fn status_args(&self) -> Option<&'static [&'static str]> {
-        Some(self.status)
+        self.status
     }
 }
 

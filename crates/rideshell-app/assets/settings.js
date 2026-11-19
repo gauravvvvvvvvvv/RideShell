@@ -311,7 +311,7 @@
     for (const p of profiles) {
       const open = el('button', 'ghost small', 'Open tab');
       open.onclick = () => { S.close(); RS.openTab({ profile: p.name }); };
-      row(c, p.name, esc(p.description || '') + (p.tools.length ? ` · ${p.tools.join(', ')}` : ''), open);
+      row(c, p.name, esc(p.description || '') + (p.tools.length ? ` · ${p.tools.map((t) => t.name).join(', ')}` : ''), open);
     }
     const add = el('button', 'primary', 'New account…');
     add.onclick = () => { S.close(); RS.newProfile(); };

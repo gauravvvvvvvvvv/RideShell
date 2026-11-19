@@ -38,6 +38,9 @@ impl Provider for Git {
     fn description(&self) -> &'static str {
         "Git author/committer identity and SSH key selection"
     }
+    fn category(&self) -> &'static str {
+        "Code hosting"
+    }
     fn isolation(&self) -> &'static str {
         "per-process environment (GIT_AUTHOR_*, GIT_COMMITTER_*, GIT_SSH_COMMAND); git config files are not modified"
     }

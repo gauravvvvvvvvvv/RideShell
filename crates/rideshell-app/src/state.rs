@@ -16,9 +16,29 @@ pub struct ProfileView {
     pub description: String,
     #[serde(rename = "isDefault")]
     pub is_default: bool,
-    /// Attached tool accounts (provider ids: claude, codex, gh, git).
-    pub tools: Vec<String>,
+    /// Connected tool accounts.
+    pub tools: Vec<ToolAccount>,
     pub secrets: usize,
+}
+
+/// A tool account connected to a profile.
+#[derive(Serialize)]
+pub struct ToolAccount {
+    /// Identity id: provider id, or `custom-<tool>`.
+    pub id: String,
+    pub name: String,
+    /// The command (for its icon and launching).
+    pub tool: String,
+    /// "account" (own config folder), "token" (API key) or "custom".
+    pub kind: &'static str,
+    pub login: bool,
+    pub status: bool,
+    /// Secret keys this tool takes (e.g. "token", "api_key").
+    pub keys: Vec<&'static str>,
+    pub summary: String,
+    /// Conversation history (Claude Code, Codex): "original", "shared" or "own".
+    pub history: Option<&'static str>,
+    pub conversations: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -40,6 +60,13 @@ pub struct AppView {
 pub struct ProviderView {
     pub id: &'static str,
     pub name: &'static str,
+    pub tool: &'static str,
+    pub category: &'static str,
+    pub kind: &'static str,
+    pub isolation: &'static str,
+    pub installed: bool,
+    /// Executable path, for the tool's own icon.
+    pub icon: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -228,8 +255,38 @@ pub fn load(paths: &Paths, cli_found: bool) -> StateView {
         apps,
         tool_icons,
         places: places(paths),
-        providers: providers::registry().iter().map(|p| ProviderView { id: p.id(), name: p.display_name() }).collect(),
+        providers: providers::registry()
+            .iter()
+            .map(|p| {
+                let exe = if p.tool().is_empty() { None } else { shims::find_real(p.tool(), Some(&shims_dir)).ok() };
+                ProviderView {
+                    id: p.id(),
+                    name: p.display_name(),
+                    tool: p.tool(),
+                    category: p.category(),
+                    kind: if p.id() == "custom" {
+                        "custom"
+                    } else if p.id() == "git" {
+                        "identity"
+                    } else if p.settings().is_empty() {
+                        "token"
+                    } else {
+                        "account"
+                    },
+                    isolation: p.isolation(),
+                    installed: exe.is_some(),
+                    icon: exe.map(|e| e.to_string_lossy().into_owned()),
+                }
+            })
+            .collect(),
         error,
+    }
+}
+
+fn same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (dunce::canonicalize(a), dunce::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy()),
+        _ => false,
     }
 }
 
@@ -238,7 +295,52 @@ fn load_profiles(paths: &Paths) -> Result<Vec<ProfileView>> {
     let default = store.default_profile()?.map(|p| p.name);
     let mut out = Vec::new();
     for p in store.list_profiles()? {
-        let tools = store.identities(p.id)?.keys().cloned().collect();
+        let accounts = paths.accounts_dir();
+        let ctx = providers::ProviderContext { profile: &p.name, accounts_dir: &accounts };
+        let mut tools = Vec::new();
+        for (id, settings) in store.identities(p.id)? {
+            let Some(prov) = providers::find(&id) else { continue };
+            let custom = prov.id() == "custom";
+            let tool = if custom { settings.get("tool").cloned().unwrap_or_default() } else { prov.tool().to_string() };
+            let (history, conversations) = match rideshell_core::history::spec(&id) {
+                Some(spec) => {
+                    let dir = match id.as_str() {
+                        "claude" => providers::CLAUDE.config_dir(&settings, &ctx),
+                        _ => providers::CODEX.config_dir(&settings, &ctx),
+                    };
+                    let original = providers::default_account_dir(&id);
+                    let mode = if original.as_ref().is_some_and(|o| same_dir(o, &dir)) {
+                        "original"
+                    } else if rideshell_core::history::is_shared(&spec, &dir) {
+                        "shared"
+                    } else {
+                        "own"
+                    };
+                    (Some(mode), Some(rideshell_core::history::conversation_count(&spec, &dir)))
+                }
+                None => (None, None),
+            };
+            tools.push(ToolAccount {
+                name: if custom { tool.clone() } else { prov.display_name().to_string() },
+                kind: if custom {
+                    "custom"
+                } else if prov.id() == "git" {
+                    "identity"
+                } else if prov.settings().is_empty() {
+                    "token"
+                } else {
+                    "account"
+                },
+                login: prov.login_args().is_some(),
+                status: prov.status_args().is_some(),
+                keys: prov.secrets().iter().map(|s| s.key).collect(),
+                summary: prov.summary(&settings, &ctx),
+                history,
+                conversations,
+                tool,
+                id,
+            });
+        }
         let secrets = store.secret_keys(p.id)?.len();
         out.push(ProfileView {
             is_default: default.as_deref() == Some(p.name.as_str()),
@@ -279,4 +381,20 @@ pub fn create_profile(paths: &Paths, cli: Option<&std::path::Path>, name: &str, 
 pub fn set_default(paths: &Paths, name: &str) -> Result<()> {
     let mut store = Store::open(&paths.db_file())?;
     store.set_default_profile(Some(name))
+}
+
+/// Folders recently worked in (VS Code, Cursor, Claude Code, Codex), local and read-only.
+pub fn worked_folders(paths: &Paths) -> Vec<rideshell_core::recent::WorkedFolder> {
+    let accounts = paths.accounts_dir();
+    let mut claude = vec![];
+    let mut codex = vec![];
+    for (tool, list) in [("claude", &mut claude), ("codex", &mut codex)] {
+        if let Some(d) = providers::default_account_dir(tool) {
+            list.push(d);
+        }
+        if let Ok(rd) = std::fs::read_dir(accounts.join(tool)) {
+            list.extend(rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()));
+        }
+    }
+    rideshell_core::recent::worked_folders(&claude, &codex, 12)
 }

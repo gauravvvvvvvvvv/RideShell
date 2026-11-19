@@ -10,6 +10,7 @@
 //! in [`registry`]. Resolution, shells and shims need no changes.
 
 mod accountdir;
+pub mod catalog;
 mod git;
 
 use std::collections::BTreeMap;
@@ -93,6 +94,14 @@ pub trait Provider: Send + Sync {
     }
     /// How isolation is achieved, shown to users so guarantees are explicit.
     fn isolation(&self) -> &'static str;
+    /// Grouping for lists ("AI coding agents", "Cloud", "Deploy"...).
+    fn category(&self) -> &'static str {
+        "Other"
+    }
+    /// New profiles get their own account for this tool automatically.
+    fn auto_attach(&self) -> bool {
+        false
+    }
     fn settings(&self) -> &'static [SettingSpec];
     fn secrets(&self) -> &'static [SecretSpec] {
         &[]
@@ -162,7 +171,7 @@ pub fn attach_default_accounts(store: &mut crate::store::Store, profile: &str) -
     let existing = store.identities(p.id)?;
     let mut attached = Vec::new();
     for prov in registry() {
-        if existing.contains_key(prov.id()) || !prov.settings().iter().any(|s| s.key == "account") {
+        if existing.contains_key(prov.id()) || !prov.auto_attach() {
             continue;
         }
         let mut settings = crate::store::Settings::new();
@@ -178,11 +187,42 @@ pub fn attach_default_accounts(store: &mut crate::store::Store, profile: &str) -
 }
 
 pub fn registry() -> &'static [&'static dyn Provider] {
-    static REGISTRY: [&dyn Provider; 4] = [&CLAUDE, &CODEX, &GH, &Git];
+    static REGISTRY: [&dyn Provider; 24] = [
+        // Account folders (each account signs in on its own)
+        &CLAUDE,
+        &CODEX,
+        &catalog::GEMINI,
+        &GH,
+        &catalog::GLAB,
+        &Git,
+        &catalog::AWS,
+        &catalog::AZURE,
+        &catalog::GCLOUD,
+        &catalog::KUBECTL,
+        &catalog::DOCKER,
+        &catalog::NPM,
+        &catalog::HUGGINGFACE,
+        // API tokens (one token per account)
+        &catalog::WRANGLER,
+        &catalog::NETLIFY,
+        &catalog::SUPABASE,
+        &catalog::HEROKU,
+        &catalog::RAILWAY,
+        &catalog::FLY,
+        &catalog::DOCTL,
+        &catalog::STRIPE,
+        &catalog::NGROK,
+        &catalog::FIREBASE,
+        // Anything else
+        &catalog::CUSTOM,
+    ];
     &REGISTRY
 }
 
 pub fn find(id: &str) -> Option<&'static dyn Provider> {
+    if catalog::is_custom_id(id) {
+        return Some(&catalog::CUSTOM);
+    }
     registry().iter().copied().find(|p| p.id().eq_ignore_ascii_case(id))
 }
 
@@ -192,7 +232,7 @@ pub fn for_tool(tool: &str) -> Option<&'static dyn Provider> {
 }
 
 /// Providers on the roadmap, listed so users get an honest answer.
-pub const PLANNED: &[&str] = &["ssh", "cloudflare", "wrangler", "aws", "vercel"];
+pub const PLANNED: &[&str] = &["ssh", "vercel"];
 
 /// Keys in `settings` not known to `provider`.
 pub fn unknown_keys(provider: &dyn Provider, settings: &Settings) -> Vec<String> {

@@ -14,6 +14,11 @@ First release. Windows 11 is the tested platform.
 * `auth login/logout/status` with a sign-in guide, `--email` and an optional `--browser private`
 * Tool shims: `claude`, `codex`, `gh` and any `shim add <tool>` use the right account in every terminal
 
+* Tool catalogue: 22 tools, each with its own sign-in folder or its own API key per account, plus
+  "any other tool" (name the command and its variables)
+* Claude Code / Codex conversation history per account: adopt the original folder, or share
+  history while keeping a separate sign-in (`rideshell history`)
+
 **Shells**
 * RideShell window: real PowerShell where cmd and bash lines run in their own shell, one
   line after another, with directory, variables and exit code carried over
@@ -26,7 +31,8 @@ First release. Windows 11 is the tested platform.
 * Launchers with real program icons and official installers for missing tools, plus
   pinning any installed tool
 * Installed-tools browser (`rideshell tools`) with per-tool routing
-* Files panel: favorites, places, projects, recent, browse, folder picker, drag and drop
+* Files panel: favorites, places, projects, recently worked (RideShell, VS Code, Cursor,
+  Claude Code, Codex), browse, folder picker, drag and drop
 * Explorer "Open in RideShell" (folders, backgrounds, drives), with an optional classic menu
 * Settings page: 11 colour schemes and Windows Terminal scheme import, terminal, sidebar,
   shell, accounts, privacy and usage, advanced

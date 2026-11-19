@@ -63,6 +63,9 @@ pub enum Command {
     /// Attach tool accounts (Claude Code, Codex, GitHub CLI, Git...) to a profile
     #[command(subcommand)]
     Identity(IdentityCommand),
+    /// Bring your Claude Code / Codex conversations into accounts (adopt the original folder, or share history)
+    #[command(subcommand)]
+    History(HistoryCommand),
     /// Store API keys and tokens in the OS credential store, per profile or per project
     #[command(subcommand)]
     Secret(SecretCommand),
@@ -217,6 +220,33 @@ pub enum AuthCommand {
         provider: Option<String>,
         #[arg(short, long)]
         profile: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum HistoryCommand {
+    /// Where each account's conversations live
+    Status,
+    /// Use the tool's original folder (e.g. ~/.claude): its sign-in and all its conversations
+    Adopt {
+        /// claude or codex
+        tool: String,
+        #[arg(short, long)]
+        profile: String,
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// Keep this account's own sign-in, but see the same conversations as the original folder
+    Share {
+        tool: String,
+        #[arg(short, long)]
+        profile: String,
+    },
+    /// Stop sharing: the account gets its own history again
+    Separate {
+        tool: String,
+        #[arg(short, long)]
+        profile: String,
     },
 }
 

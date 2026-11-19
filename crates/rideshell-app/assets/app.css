@@ -432,3 +432,26 @@ body.light .avatar, body.light .primary { color: #fff; }
 .sb-promo { max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 11.5px; text-decoration: none; cursor: default; }
 .sb-promo.link { cursor: pointer; }
 .sb-promo.link:hover { color: var(--text); text-decoration: underline; }
+
+/* ----- tool rows & connect ----- */
+.tool-row .hb { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none; box-shadow: 0 0 0 3px rgba(52, 211, 153, .15); }
+.tool-row .hb.shared { background: var(--cyan); box-shadow: 0 0 0 3px rgba(34, 211, 238, .15); }
+.tool-row .tmore { font-size: 14px; line-height: 1; padding: 0 6px 2px; }
+.profile .tools .more { font-size: 10px; color: var(--text-3); align-self: center; }
+.connect-box { width: min(640px, 94vw); max-height: 78vh; display: flex; flex-direction: column; }
+.connect-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 16px 0 18px; }
+.connect-head h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.connect-sub { margin: 4px 18px 10px; font-size: 12px; }
+#connect-list { overflow-y: auto; padding: 6px; flex: 1; }
+.c-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; cursor: pointer; color: var(--text-2); }
+.c-item:hover { background: var(--surface-2); color: var(--text); }
+.c-name { flex: 1; display: flex; flex-direction: column; font-weight: 550; }
+.c-name small { font-weight: 400; font-size: 11px; color: var(--text-3); }
+.c-how { font-size: 11px; color: var(--text-3); border: 1px solid var(--line-2); padding: 1px 7px; border-radius: 999px; }
+.c-item.other { margin-top: 6px; border-top: 1px solid var(--line); border-radius: 0 0 9px 9px; padding-top: 10px; }
+#connect-custom { padding: 8px 18px 16px; overflow-y: auto; }
+#connect-custom label { display: block; color: var(--text-2); font-size: 12px; font-weight: 550; margin-bottom: 12px; }
+#connect-custom input { display: block; width: 100%; margin-top: 6px; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line-2); background: rgba(0,0,0,.25); outline: none; }
+#connect-custom input:focus { border-color: rgba(167, 139, 250, .6); }
+#connect-custom .opt { color: var(--text-3); font-weight: 400; margin-left: 4px; }
+.frow .fsrc { font-style: normal; font-size: 10px; color: var(--text-3); white-space: nowrap; }

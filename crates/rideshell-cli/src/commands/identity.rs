@@ -23,18 +23,10 @@ fn provider_or_explain(id: &str) -> Result<&'static dyn Provider> {
         return Ok(p);
     }
     let available: Vec<_> = providers::registry().iter().map(|p| p.id()).collect();
-    if providers::PLANNED.contains(&id.to_ascii_lowercase().as_str()) {
-        bail!(
-            "a dedicated '{id}' adapter is planned (available now: {}). Any tool works today through \
-             variables and secrets, e.g. `{bin} secret set CLOUDFLARE_API_TOKEN --profile work` and \
-             `{bin} shim add wrangler`.",
-            available.join(", "),
-            bin = brand::BIN_NAME
-        );
-    }
     bail!(
-        "no built-in adapter for '{id}' (available: {}). For other tools use `{bin} secret set` / \
-         `{bin} profile env set` plus `{bin} shim add <tool>`.",
+        "'{id}' is not in the catalogue (available: {}). Any other tool: \
+         `{bin} identity set <profile> custom tool={id} [folder_var=VAR]`, and \
+         `{bin} secret set KEY --profile <profile>` for its API key.",
         available.join(", "),
         bin = brand::BIN_NAME
     )
@@ -47,9 +39,34 @@ pub fn pctx<'a>(ctx: &'a Ctx, profile: &'a Profile, accounts: &'a std::path::Pat
 
 fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<i32> {
     let provider = provider_or_explain(provider_id)?;
+    // "Any other tool" is stored per tool: custom-<tool>.
+    let identity_id = if provider.id() == "custom" {
+        let tool = if providers::catalog::is_custom_id(provider_id) {
+            provider_id[7..].to_string()
+        } else {
+            pairs
+                .iter()
+                .find_map(|p| p.strip_prefix("tool=").map(str::to_string))
+                .context("name the tool: `identity set <profile> custom tool=<command> [folder_var=VAR]`")?
+        };
+        providers::catalog::custom_id(&tool)
+    } else {
+        provider.id().to_string()
+    };
     let mut store = ctx.store()?;
     let p = store.require_profile(profile)?;
-    let mut settings = store.identities(p.id)?.remove(provider.id()).unwrap_or_default();
+    let mut settings = store.identities(p.id)?.remove(&identity_id).unwrap_or_default();
+    if provider.id() == "custom" && !settings.contains_key("tool") {
+        settings.insert("tool".into(), identity_id[7..].to_string());
+    }
+    // A token tool with nothing given: ask for its token now (or again, to change it).
+    let asked: Vec<String> = if pairs.is_empty() && provider.settings().is_empty() {
+        provider.secrets().iter().map(|s| s.key.to_string()).collect()
+    } else {
+        Vec::new()
+    };
+    let pairs: Vec<String> = pairs.iter().cloned().chain(asked).collect();
+    let pairs = &pairs[..];
     let mut secrets: Vec<(&'static str, String)> = Vec::new();
 
     for pair in pairs {
@@ -91,7 +108,7 @@ fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         bail!("identity not saved");
     }
-    store.set_identity(&p.name, provider.id(), &settings)?;
+    store.set_identity(&p.name, &identity_id, &settings)?;
     let accounts = ctx.paths.accounts_dir();
     ui::success(format!(
         "{} {}: {}",
@@ -107,6 +124,9 @@ fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<
     if provider.auto_shim() {
         shim::add(ctx, provider.tool())?;
         shim::path_hint(ctx);
+    } else if let Some(tool) = settings.get("tool") {
+        shim::add(ctx, tool)?;
+        shim::path_hint(ctx);
     }
     if provider.login_args().is_some() {
         ui::hint(format!("sign in once: {} auth login {} --profile {}", brand::BIN_NAME, provider.id(), p.name));
@@ -117,7 +137,11 @@ fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<
 fn unset(ctx: &Ctx, profile: &str, provider_id: &str, keys: &[String]) -> Result<i32> {
     let mut store = ctx.store()?;
     let p = store.require_profile(profile)?;
-    let id = providers::find(provider_id).map(|p| p.id()).unwrap_or(provider_id);
+    let id = match providers::find(provider_id) {
+        Some(_) if providers::catalog::is_custom_id(provider_id) => provider_id,
+        Some(p) => p.id(),
+        None => provider_id,
+    };
     if keys.is_empty() {
         if store.remove_identity(&p.name, id)? {
             ui::success(format!("removed {id} from {}", ui::accent(&p.name)));

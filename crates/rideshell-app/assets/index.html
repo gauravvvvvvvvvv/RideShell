@@ -65,7 +65,7 @@
           <div class="sec-body"><div id="places"></div></div>
         </section>
         <section class="sec" data-sec="recent" id="recent-sec">
-          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Recent</h2></button></div>
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Recently worked</h2></button></div>
           <div class="sec-body"><div id="recent-folders"></div></div>
         </section>
         <section class="sec" data-sec="browse">
@@ -140,6 +140,22 @@
         <button class="icon-btn settings-x" id="settings-close" title="Close (Esc)"></button>
         <div id="settings-body"></div>
       </div>
+    </div>
+  </div>
+
+  <div id="connect" class="overlay" hidden>
+    <div class="palette-box connect-box">
+      <div class="connect-head"><h3 id="connect-title">Connect a tool</h3><button class="icon-btn" id="connect-close" title="Close (Esc)"></button></div>
+      <p class="muted connect-sub">Each account gets its own sign-in or API key for the tool, using the method the tool itself supports.</p>
+      <div class="palette-input"><span class="i"></span><input id="connect-input" placeholder="Search tools…" autocomplete="off" spellcheck="false"></div>
+      <div id="connect-list"></div>
+      <form id="connect-custom" hidden>
+        <label>Tool (command)<input id="cc-tool" placeholder="vercel" required pattern="[A-Za-z0-9][A-Za-z0-9._+-]*" autocomplete="off" spellcheck="false"></label>
+        <label>Variable that selects its config folder <span class="opt">optional</span><input id="cc-folder" placeholder="e.g. VERCEL_HOME" pattern="[A-Za-z_][A-Za-z0-9_]*" autocomplete="off" spellcheck="false"></label>
+        <label>Variable for its API key <span class="opt">optional</span><input id="cc-key" placeholder="e.g. VERCEL_TOKEN" pattern="[A-Za-z_][A-Za-z0-9_]*" autocomplete="off" spellcheck="false"></label>
+        <p class="muted">Check the tool's documentation for these. With a folder variable, each account gets its own folder (and so its own sign-in). The key is stored in the Windows Credential Manager.</p>
+        <div class="modal-actions"><button type="button" class="ghost" id="cc-back">Back</button><button type="submit" class="primary">Connect</button></div>
+      </form>
     </div>
   </div>
 

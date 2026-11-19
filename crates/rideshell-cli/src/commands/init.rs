@@ -41,14 +41,8 @@ pub fn run(ctx: &Ctx, args: InitArgs) -> Result<i32> {
     // 4. Tools.
     let tools: Vec<String> = providers::registry()
         .iter()
-        .map(|p| {
-            let d = p.detect();
-            if d.installed() {
-                p.id().to_string()
-            } else {
-                ui::dim(format!("{} (not found)", p.id()))
-            }
-        })
+        .filter(|p| !p.tool().is_empty() && rideshell_core::shims::find_real(p.tool(), None).is_ok())
+        .map(|p| p.id().to_string())
         .collect();
     anstream::println!("Adapters    {}", tools.join(", "));
     anstream::println!();
