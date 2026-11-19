@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (2026-11-20)
 
 * Conversation history of new Claude Code / Codex accounts is **private by default** again, so
   work and personal never mix. Share it per account (`rideshell history share`, or the tool's ⋯
