@@ -1,0 +1,362 @@
+use std::process::Command;
+
+use anyhow::{bail, Context, Result};
+use rideshell_core::providers::{self, Provider, ProviderContext, Severity};
+use rideshell_core::store::{Profile, Store};
+use rideshell_core::{brand, exec, shims};
+
+use super::{profile::check_not_secret, resolve_here, run, secret, shim, Ctx};
+use crate::cli::BrowserArg;
+use crate::cli::{AuthCommand, IdentityCommand, Scope};
+use crate::ui;
+
+pub fn run(ctx: &Ctx, cmd: IdentityCommand) -> Result<i32> {
+    match cmd {
+        IdentityCommand::Set { profile, provider, settings } => set(ctx, &profile, &provider, &settings),
+        IdentityCommand::Unset { profile, provider, keys } => unset(ctx, &profile, &provider, &keys),
+        IdentityCommand::Show { profile } => show(ctx, profile.as_deref()),
+    }
+}
+
+fn provider_or_explain(id: &str) -> Result<&'static dyn Provider> {
+    if let Some(p) = providers::find(id) {
+        return Ok(p);
+    }
+    let available: Vec<_> = providers::registry().iter().map(|p| p.id()).collect();
+    if providers::PLANNED.contains(&id.to_ascii_lowercase().as_str()) {
+        bail!(
+            "a dedicated '{id}' adapter is planned (available now: {}). Any tool works today through \
+             variables and secrets, e.g. `{bin} secret set CLOUDFLARE_API_TOKEN --profile work` and \
+             `{bin} shim add wrangler`.",
+            available.join(", "),
+            bin = brand::BIN_NAME
+        );
+    }
+    bail!(
+        "no built-in adapter for '{id}' (available: {}). For other tools use `{bin} secret set` / \
+         `{bin} profile env set` plus `{bin} shim add <tool>`.",
+        available.join(", "),
+        bin = brand::BIN_NAME
+    )
+}
+
+pub fn pctx<'a>(ctx: &'a Ctx, profile: &'a Profile, accounts: &'a std::path::Path) -> ProviderContext<'a> {
+    let _ = ctx;
+    ProviderContext { profile: &profile.name, accounts_dir: accounts }
+}
+
+fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<i32> {
+    let provider = provider_or_explain(provider_id)?;
+    let mut store = ctx.store()?;
+    let p = store.require_profile(profile)?;
+    let mut settings = store.identities(p.id)?.remove(provider.id()).unwrap_or_default();
+    let mut secrets: Vec<(&'static str, String)> = Vec::new();
+
+    for pair in pairs {
+        let (k, v) = match pair.split_once('=') {
+            Some((k, v)) => (k.trim(), Some(v.to_string())),
+            None => (pair.trim(), None),
+        };
+        if let Some(spec) = provider.secrets().iter().find(|s| s.key == k) {
+            let value = match v {
+                Some(v) => {
+                    ui::warn(
+                        "secrets typed on the command line can end up in shell history; omit the value to be prompted",
+                    );
+                    v
+                }
+                None => secret::read_secret(spec.env, false)?,
+            };
+            secrets.push((spec.env, value));
+            continue;
+        }
+        let Some(v) = v else { bail!("expected KEY=VALUE, got '{pair}'") };
+        if !provider.settings().iter().any(|s| s.key == k) {
+            let mut known: Vec<_> = provider.settings().iter().map(|s| s.key).collect();
+            known.extend(provider.secrets().iter().map(|s| s.key));
+            bail!("'{k}' is not a {} setting (known: {})", provider.id(), known.join(", "));
+        }
+        check_not_secret(k, &v, false)?;
+        settings.insert(k.to_string(), v);
+    }
+
+    let settings = provider.normalize(settings);
+    let diagnostics = provider.validate(&settings);
+    for d in &diagnostics {
+        match d.severity {
+            Severity::Error => ui::error(&d.message),
+            Severity::Warning => ui::warn(&d.message),
+        }
+    }
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        bail!("identity not saved");
+    }
+    store.set_identity(&p.name, provider.id(), &settings)?;
+    let accounts = ctx.paths.accounts_dir();
+    ui::success(format!(
+        "{} {}: {}",
+        ui::accent(&p.name),
+        provider.display_name(),
+        provider.summary(&settings, &pctx(ctx, &p, &accounts))
+    ));
+    drop(store);
+
+    for (env, value) in secrets {
+        secret::set(ctx, &Scope { profile: Some(p.name.clone()), dir: None }, env, &value)?;
+    }
+    if provider.auto_shim() {
+        shim::add(ctx, provider.tool())?;
+        shim::path_hint(ctx);
+    }
+    if provider.login_args().is_some() {
+        ui::hint(format!("sign in once: {} auth login {} --profile {}", brand::BIN_NAME, provider.id(), p.name));
+    }
+    Ok(0)
+}
+
+fn unset(ctx: &Ctx, profile: &str, provider_id: &str, keys: &[String]) -> Result<i32> {
+    let mut store = ctx.store()?;
+    let p = store.require_profile(profile)?;
+    let id = providers::find(provider_id).map(|p| p.id()).unwrap_or(provider_id);
+    if keys.is_empty() {
+        if store.remove_identity(&p.name, id)? {
+            ui::success(format!("removed {id} from {}", ui::accent(&p.name)));
+            ui::hint(
+                "the account's own directory (and its login) is kept; delete it manually if you no longer need it",
+            );
+        } else {
+            ui::warn(format!("{} has no {id} identity", p.name));
+        }
+        return Ok(0);
+    }
+    let Some(mut settings) = store.identities(p.id)?.remove(id) else {
+        bail!("{} has no {id} identity", p.name);
+    };
+    for k in keys {
+        if settings.remove(k).is_none() {
+            ui::warn(format!("{k} was not set"));
+        }
+    }
+    store.set_identity(&p.name, id, &settings)?;
+    ui::success(format!("updated {id} identity of {}", ui::accent(&p.name)));
+    Ok(0)
+}
+
+fn show(ctx: &Ctx, profile: Option<&str>) -> Result<i32> {
+    let store = ctx.store()?;
+    let p = match profile {
+        Some(n) => store.require_profile(n)?,
+        None => resolve_here(ctx, &store, None, None)?
+            .profile
+            .with_context(|| "no profile is active here; name one explicitly".to_string())?,
+    };
+    let accounts = ctx.paths.accounts_dir();
+    let identities = store.identities(p.id)?;
+    if identities.is_empty() {
+        anstream::println!("{} has no identities.", p.name);
+    }
+    for (id, settings) in identities {
+        let summary =
+            providers::find(&id).map(|pr| pr.summary(&settings, &pctx(ctx, &p, &accounts))).unwrap_or_default();
+        anstream::println!("{}  {}", ui::paint(&id, ui::BOLD), summary);
+        for (k, v) in settings {
+            anstream::println!("  {k} = {v}");
+        }
+    }
+    Ok(0)
+}
+
+pub fn providers() -> Result<i32> {
+    for p in providers::registry() {
+        let det = p.detect();
+        let state = match (&det.path, &det.version) {
+            (Some(_), Some(v)) => ui::paint(v, ui::OK),
+            (Some(path), None) => ui::paint(path.display().to_string(), ui::OK),
+            _ => ui::paint("not installed", ui::WARN),
+        };
+        anstream::println!(
+            "{}  {} — {}  {}",
+            ui::paint(p.id(), ui::ACCENT),
+            p.display_name(),
+            p.description(),
+            ui::dim(format!("({state})"))
+        );
+        ui::hint(format!("isolation: {}", p.isolation()));
+        for s in p.settings() {
+            ui::hint(format!("{:<10} {}", s.key, s.description));
+        }
+        for s in p.secrets() {
+            ui::hint(format!("{:<10} {} (secret, stored as {})", s.key, s.description, s.env));
+        }
+        anstream::println!();
+    }
+    anstream::println!(
+        "Any other tool: `{bin} secret set KEY --profile P`, `{bin} profile env set P KEY VALUE`, `{bin} shim add <tool>`.",
+        bin = brand::BIN_NAME
+    );
+    Ok(0)
+}
+
+// ----- auth ------------------------------------------------------------------
+
+pub fn auth(ctx: &Ctx, cmd: AuthCommand) -> Result<i32> {
+    match cmd {
+        AuthCommand::Login { provider, profile, browser, email } => {
+            login_logout(ctx, &provider, profile.as_deref(), true, browser, email.as_deref())
+        }
+        AuthCommand::Logout { provider, profile } => {
+            login_logout(ctx, &provider, profile.as_deref(), false, BrowserArg::Default, None)
+        }
+        AuthCommand::Status { provider, profile } => status(ctx, provider.as_deref(), profile.as_deref()),
+    }
+}
+
+fn pick_profile(ctx: &Ctx, store: &Store, name: Option<&str>) -> Result<Profile> {
+    match name {
+        Some(n) => store.require_profile(n),
+        None => resolve_here(ctx, store, None, None)?
+            .profile
+            .with_context(|| "no profile is active here; pass --profile".to_string()),
+    }
+}
+
+fn login_logout(
+    ctx: &Ctx,
+    provider_id: &str,
+    profile: Option<&str>,
+    login: bool,
+    browser: BrowserArg,
+    email: Option<&str>,
+) -> Result<i32> {
+    let provider = provider_or_explain(provider_id)?;
+    let args = if login { provider.login_args() } else { provider.logout_args() }
+        .with_context(|| format!("{} has no sign-in flow to run", provider.display_name()))?;
+    let mut store = ctx.store()?;
+    let p = pick_profile(ctx, &store, profile)?;
+    if !store.identities(p.id)?.contains_key(provider.id()) {
+        // First use: give this profile its own account with defaults.
+        store.set_identity(&p.name, provider.id(), &Default::default())?;
+        ui::success(format!("{} now has its own {} account", ui::accent(&p.name), provider.display_name()));
+        if provider.auto_shim() {
+            shim::add(ctx, provider.tool())?;
+        }
+    }
+    let mut prepared = run::prepare(ctx, &store, Some(&p.name), None, true)?;
+    let others: Vec<String> = store.list_profiles()?.into_iter().filter(|o| o.id != p.id).map(|o| o.name).collect();
+    drop(store);
+    let real = shims::find_real(provider.tool(), Some(&ctx.paths.shims_dir()))?;
+    let mut args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    if login {
+        if let Some(e) = email {
+            if provider.id() == "claude" {
+                args.extend(["--email".to_string(), e.to_string()]);
+            } else {
+                ui::warn(format!("{} does not support pre-filling an e-mail; ignored", provider.display_name()));
+            }
+        }
+        if browser == BrowserArg::Private {
+            let me = std::env::current_exe().context("cannot determine the executable path")?;
+            let me = me.to_string_lossy().into_owned();
+            prepared.plan.set.push(("BROWSER".into(), me.clone()));
+            prepared.plan.set.push(("GH_BROWSER".into(), me));
+            prepared.plan.set.push((super::browser::PRIVATE_ENV.into(), "1".into()));
+        }
+        sign_in_help(provider.display_name(), &p.name, &others, browser);
+    }
+    anstream::eprintln!(
+        "{} {} {} for profile {}",
+        ui::dim(format!("{} ▸", brand::BIN_NAME)),
+        provider.tool(),
+        args.join(" "),
+        ui::accent(&p.name)
+    );
+    exec::run(&real.to_string_lossy(), &args, &prepared.plan, None)
+}
+
+/// What to expect before the tool opens its sign-in page.
+fn sign_in_help(tool: &str, profile: &str, others: &[String], browser: BrowserArg) {
+    anstream::eprintln!();
+    anstream::eprintln!("  Signing {} in to {tool}. The login is stored for this profile only.", ui::accent(profile));
+    match browser {
+        BrowserArg::Default => {
+            if !others.is_empty() {
+                anstream::eprintln!(
+                    "  {}",
+                    ui::dim(format!(
+                        "Your browser may already be signed in as the account you use in {}.",
+                        others.join(", ")
+                    ))
+                );
+                anstream::eprintln!(
+                    "  {}",
+                    ui::dim("To use a different account, switch account or sign out on the page that opens,")
+                );
+                anstream::eprintln!(
+                    "  {}",
+                    ui::dim("or copy the link shown below into another browser or browser profile.")
+                );
+                anstream::eprintln!(
+                    "  {}",
+                    ui::dim(
+                        "(A private window: add `--browser private`; pre-fill an e-mail: `--email you@example.com`.)"
+                    )
+                );
+            }
+        }
+        BrowserArg::Private => {
+            anstream::eprintln!("  {}", ui::dim("The sign-in page opens in a private window of your default browser."));
+        }
+    }
+    anstream::eprintln!();
+}
+
+fn status(ctx: &Ctx, provider_id: Option<&str>, profile: Option<&str>) -> Result<i32> {
+    let wanted: Vec<&'static dyn Provider> = match provider_id {
+        Some(id) => vec![provider_or_explain(id)?],
+        None => providers::registry().iter().copied().filter(|p| p.status_args().is_some()).collect(),
+    };
+    let store = ctx.store()?;
+    let profiles = match profile {
+        Some(n) => vec![store.require_profile(n)?],
+        None => store.list_profiles()?,
+    };
+    let mut any = false;
+    for provider in wanted {
+        let Some(args) = provider.status_args() else { continue };
+        let Ok(real) = shims::find_real(provider.tool(), Some(&ctx.paths.shims_dir())) else {
+            continue;
+        };
+        for p in &profiles {
+            let Some(settings) = store.identities(p.id)?.remove(provider.id()) else { continue };
+            any = true;
+            let accounts = ctx.paths.accounts_dir();
+            anstream::println!(
+                "{} {} {}",
+                ui::accent(&p.name),
+                ui::paint(provider.display_name(), ui::BOLD),
+                ui::dim(provider.summary(&settings, &pctx(ctx, p, &accounts)))
+            );
+            let prepared = run::prepare(ctx, &store, Some(&p.name), None, true)?;
+            let mut cmd = Command::new(&real);
+            cmd.args(args.iter());
+            prepared.plan.apply_to_command(&mut cmd);
+            match cmd.output() {
+                Ok(out) => {
+                    let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+                    for line in text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with("WARNING: proceeding")) {
+                        anstream::println!("  {line}");
+                    }
+                }
+                Err(e) => ui::warn(format!("cannot run {}: {e}", real.display())),
+            }
+            anstream::println!();
+        }
+    }
+    if !any {
+        anstream::println!(
+            "No profile has a tool account yet. Example: `{} identity set work claude`.",
+            brand::BIN_NAME
+        );
+    }
+    Ok(0)
+}

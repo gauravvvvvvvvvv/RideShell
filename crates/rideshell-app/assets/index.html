@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RideShell</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="resize-edges">
+    <div data-dir="n"></div><div data-dir="s"></div><div data-dir="e"></div><div data-dir="w"></div>
+    <div data-dir="ne"></div><div data-dir="nw"></div><div data-dir="se"></div><div data-dir="sw"></div>
+  </div>
+
+  <div id="app">
+    <header id="titlebar">
+      <div class="brand" data-drag>
+        <span class="logo"></span>
+        <span class="wordmark">RideShell</span>
+      </div>
+      <button class="icon-btn" id="toggle-sidebar" title="Toggle sidebar (Ctrl+B)"></button>
+      <nav id="tabs" data-drag></nav>
+      <button class="icon-btn" id="new-tab" title="New tab (Ctrl+T)"></button>
+      <div class="drag-fill" data-drag></div>
+      <button id="palette-btn" title="Command palette (Ctrl+K)">
+        <span class="i"></span><span>Search or run anything</span><kbd>Ctrl K</kbd>
+      </button>
+      <span id="admin-badge" hidden></span>
+      <div class="win-controls">
+        <button data-win="minimize" title="Minimize"></button>
+        <button data-win="maximize" title="Maximize"></button>
+        <button data-win="close" class="close" title="Close"></button>
+      </div>
+    </header>
+
+    <aside id="sidebar">
+      <div class="side-tabs"><button data-pane="home" class="on">Home</button><button data-pane="files">Files</button></div>
+      <div id="pane-home" class="pane">
+        <section class="sec" data-sec="accounts">
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Accounts</h2></button><button class="icon-btn small" id="add-profile" title="New account"></button></div>
+          <div class="sec-body"><div id="profiles"></div></div>
+        </section>
+        <section class="sec" data-sec="favorites">
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Favorite folders</h2></button></div>
+          <div class="sec-body"><div class="fav-list" id="fav-home"></div></div>
+        </section>
+        <section class="sec" data-sec="launch">
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Launch</h2></button></div>
+          <div class="sec-body">
+            <div id="apps"></div>
+            <button class="all-tools" id="all-tools-btn"><span class="i"></span><span class="lbl">All installed tools</span><span class="count" id="tools-count"></span></button>
+          </div>
+        </section>
+      </div>
+
+      <div id="pane-files" class="pane" hidden>
+        <button class="open-folder" id="open-folder"></button>
+        <section class="sec" data-sec="favorites-files">
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Favorites</h2></button></div>
+          <div class="sec-body"><div class="fav-list" id="pinned-folders"></div></div>
+        </section>
+        <section class="sec" data-sec="places">
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Places</h2></button></div>
+          <div class="sec-body"><div id="places"></div></div>
+        </section>
+        <section class="sec" data-sec="recent" id="recent-sec">
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Recent</h2></button></div>
+          <div class="sec-body"><div id="recent-folders"></div></div>
+        </section>
+        <section class="sec" data-sec="browse">
+          <div class="sec-head"><button class="sec-toggle"><span class="chev"></span><h2>Browse</h2></button></div>
+          <div class="sec-body"><div id="crumbs"></div><div id="dirlist"></div></div>
+        </section>
+      </div>
+
+      <div class="sidebar-foot">
+        <button class="foot-btn" id="admin-btn"><span class="i"></span><span>Open as Administrator</span></button>
+        <button class="foot-btn" id="settings-btn"><span class="i"></span><span>Settings</span></button>
+      </div>
+    </aside>
+
+    <main id="stage">
+      <div id="terminals"></div>
+      <div id="empty" hidden>
+        <div class="empty-card">
+          <div class="empty-logo"></div>
+          <h1>Nothing open</h1>
+          <p>Open a tab, a folder or an app from the sidebar, or drop a folder here.</p>
+          <div class="empty-actions"><button class="primary" id="empty-new">New tab</button><button class="ghost" id="empty-folder">Open folder…</button></div>
+        </div>
+      </div>
+    </main>
+
+    <footer id="statusbar">
+      <span class="chip" id="sb-profile"></span>
+      <span class="sb-item" id="sb-cwd"></span>
+      <span class="sb-spacer"></span>
+      <a class="sb-promo" id="sb-promo" hidden></a>
+      <span class="sb-spacer"></span>
+      <span class="sb-item" id="sb-shells"></span>
+      <span class="sb-item dim" id="sb-version"></span>
+    </footer>
+  </div>
+
+  <div id="palette" class="overlay" hidden>
+    <div class="palette-box">
+      <div class="palette-input"><span class="i"></span><input id="palette-input" placeholder="Type a command, account or app…" autocomplete="off" spellcheck="false"></div>
+      <div id="palette-list"></div>
+      <div class="palette-foot"><kbd>↑↓</kbd> move <kbd>Enter</kbd> run <kbd>Esc</kbd> close</div>
+    </div>
+  </div>
+
+  <div id="tools" class="overlay" hidden>
+    <div class="tools-box">
+      <div class="tools-head">
+        <div>
+          <h3>Installed tools</h3>
+          <p class="muted" id="tools-sub">Every command on your PATH, usable from any terminal on this PC.</p>
+        </div>
+        <button class="icon-btn" id="tools-close" title="Close (Esc)"></button>
+      </div>
+      <div class="tools-bar">
+        <div class="palette-input tools-search"><span class="i"></span><input id="tools-input" placeholder="Search tools…" autocomplete="off" spellcheck="false"></div>
+        <label class="check"><input type="checkbox" id="tools-all"> Windows commands</label>
+      </div>
+      <div id="tools-chips"></div>
+      <div id="tools-list"></div>
+      <div class="palette-foot"><span id="tools-foot"></span></div>
+    </div>
+  </div>
+
+  <div id="settings" class="overlay" hidden>
+    <div class="settings-box">
+      <nav class="settings-side">
+        <div class="settings-title">Settings</div>
+        <div id="settings-nav"></div>
+      </nav>
+      <div class="settings-main">
+        <button class="icon-btn settings-x" id="settings-close" title="Close (Esc)"></button>
+        <div id="settings-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="signin" class="overlay" hidden>
+    <form class="modal-box" id="signin-form">
+      <h3 id="si-title">Sign in</h3>
+      <p class="muted" id="si-text"></p>
+      <ul class="si-tips" id="si-tips"></ul>
+      <label id="si-email-row">E-mail on the sign-in page <span class="opt">optional</span><input id="si-email" type="email" placeholder="you@example.com" autocomplete="off" spellcheck="false"></label>
+      <div class="si-label">Open the sign-in page in</div>
+      <div class="si-choice">
+        <label class="si-opt"><input type="radio" name="si-browser" value="default" checked><span><b>Your browser</b><small>as it is, with your Google sign-in and saved passwords</small></span></label>
+        <label class="si-opt"><input type="radio" name="si-browser" value="private"><span><b>Private window</b><small>starts signed out; nothing is remembered afterwards</small></span></label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="si-cancel">Cancel</button>
+        <button type="submit" class="primary">Continue</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="modal" class="overlay" hidden>
+    <form class="modal-box" id="profile-form">
+      <h3>New account</h3>
+      <p class="muted">An account (profile) keeps its own tool logins, API keys and settings. Use one per job, client or identity.</p>
+      <label>Name<input id="pf-name" placeholder="work" required pattern="[A-Za-z0-9][A-Za-z0-9._-]*" maxlength="64" autocomplete="off" spellcheck="false"></label>
+      <label>Description<input id="pf-desc" placeholder="Company laptop identity" maxlength="200" autocomplete="off"></label>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="pf-cancel">Cancel</button>
+        <button type="submit" class="primary">Create account</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="menu" hidden></div>
+  <div id="toasts"></div>
+
+  <script src="/vendor/xterm.js"></script>
+  <script src="/vendor/addon-fit.js"></script>
+  <script src="/vendor/addon-webgl.js"></script>
+  <script src="/vendor/addon-web-links.js"></script>
+  <script src="/icons.js"></script>
+  <script src="/app.js"></script>
+  <script src="/settings.js"></script>
+  <script src="/usage.js"></script>
+</body>
+</html>

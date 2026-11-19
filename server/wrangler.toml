@@ -1,0 +1,18 @@
+# RideShell anonymous usage counter (optional; only builds that set
+# RIDESHELL_TELEMETRY_URL ever talk to it). Deploy: see README.md.
+name = "rideshell-telemetry"
+main = "src/index.js"
+compatibility_date = "2026-11-19"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rideshell-telemetry"
+# Replace with the id printed by `npx wrangler d1 create rideshell-telemetry`.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[observability]
+enabled = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.1
