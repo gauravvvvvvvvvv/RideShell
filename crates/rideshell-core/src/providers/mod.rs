@@ -130,17 +130,6 @@ pub trait Provider: Send + Sync {
     }
     /// One-line human summary, e.g. `Jane Doe <jane@corp.example>`.
     fn summary(&self, settings: &Settings, ctx: &ProviderContext) -> String;
-    /// Arguments that start the tool's own sign-in flow.
-    fn login_args(&self) -> Option<&'static [&'static str]> {
-        None
-    }
-    fn logout_args(&self) -> Option<&'static [&'static str]> {
-        None
-    }
-    /// Arguments that print the tool's own authentication status.
-    fn status_args(&self) -> Option<&'static [&'static str]> {
-        None
-    }
 }
 
 /// All built-in providers.

@@ -17,6 +17,16 @@ pub struct Config {
     pub shell: ShellConfig,
     pub shims: ShimsConfig,
     pub session: SessionConfig,
+    pub history: HistoryConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct HistoryConfig {
+    /// New Claude Code / Codex accounts see the conversations of the tool's
+    /// original folder (~/.claude, ~/.codex). Off: each account's
+    /// conversations stay its own (e.g. work and personal never mix).
+    pub share_new_accounts: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +116,13 @@ host = "auto"
 auto_switch = true
 # Show a dim marker when a line runs in cmd or bash.
 show_dialect = true
+
+[history]
+# New Claude Code / Codex accounts share conversation history with the tool's
+# original folder (~/.claude, ~/.codex), so `claude --resume` lists the
+# conversations you already had. Off: every account's conversations stay its
+# own. Per account: `rideshell history share|separate <tool> --profile <name>`.
+share_new_accounts = false
 "#;
 
 impl Config {

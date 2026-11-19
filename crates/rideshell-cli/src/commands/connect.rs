@@ -1,13 +1,14 @@
 //! `rideshell connect`: connect any tool to a profile, in plain prompts.
 //!
 //! RideShell keeps no list of tools: it reads the tool's own help to suggest
-//! its sign-in command and the variables it mentions, and asks you to confirm.
+//! the variables it mentions, and asks you to confirm. Signing in is the
+//! tool's own business: run it in a tab of the profile.
 
 use anyhow::{bail, Result};
 use rideshell_core::{discover, providers, shims};
 
 use super::{identity, resolve_here, secret, Ctx};
-use crate::cli::{BrowserArg, Scope};
+use crate::cli::Scope;
 use crate::ui;
 
 pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i32> {
@@ -35,9 +36,6 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
         providers::registry().iter().find(|pr| pr.id() != "custom" && pr.tool().eq_ignore_ascii_case(&tool))
     {
         identity::set(ctx, &p.name, builtin.id(), &[])?;
-        if builtin.login_args().is_some() && ui::stdin_is_interactive() && ui::confirm("Sign in now?", false) {
-            return identity::login_logout(ctx, builtin.id(), Some(&p.name), true, BrowserArg::Default, None);
-        }
         return Ok(0);
     }
 
@@ -51,11 +49,8 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
             discover::Discovery::default()
         }
     };
-    if !found.sign_in.is_empty() || !found.key_vars.is_empty() || !found.config_vars.is_empty() {
+    if !found.key_vars.is_empty() || !found.config_vars.is_empty() {
         anstream::println!("From {tool}'s help:");
-        if !found.sign_in.is_empty() {
-            anstream::println!("  sign-in   {}", found.sign_in.join(", "));
-        }
         if !found.key_vars.is_empty() {
             anstream::println!("  keys      {}", found.key_vars.join(", "));
         }
@@ -69,10 +64,6 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
         let a = answer.trim().to_string();
         (!a.is_empty() && a != "-").then_some(a)
     };
-    let login = pick(ui::ask(
-        "Sign-in command (e.g. login, auth login)",
-        found.sign_in.first().map(String::as_str).unwrap_or("-"),
-    ));
     let keys = pick(ui::ask(
         "API key variables (comma-separated)",
         &if found.key_vars.is_empty() { "-".to_string() } else { found.key_vars.join(",") },
@@ -80,9 +71,6 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
     let folder = pick(ui::ask("Config folder variable (this account gets its own folder)", "-"));
 
     let mut pairs = vec![format!("tool={tool}")];
-    if let Some(l) = &login {
-        pairs.push(format!("login={l}"));
-    }
     if let Some(k) = &keys {
         pairs.push(format!(
             "key_vars={}",
@@ -93,7 +81,6 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
         pairs.push(format!("folder_var={f}"));
     }
     identity::set(ctx, &p.name, "custom", &pairs)?;
-    let id = providers::catalog::custom_id(&tool);
 
     if let Some(k) = &keys {
         if ui::stdin_is_interactive() && ui::confirm("Enter the API key now?", true) {
@@ -102,10 +89,6 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
                 secret::set(ctx, &Scope { profile: Some(p.name.clone()), dir: None }, var, &value)?;
             }
         }
-    }
-    // Only ever on an explicit "yes" in a terminal: never by default.
-    if login.is_some() && ui::stdin_is_interactive() && ui::confirm("Sign in now?", false) {
-        return identity::login_logout(ctx, &id, Some(&p.name), true, BrowserArg::Default, None);
     }
     Ok(0)
 }

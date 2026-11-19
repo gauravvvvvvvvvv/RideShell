@@ -242,10 +242,8 @@ pub fn run(ctx: &Ctx, args: InstallArgs) -> Result<i32> {
     anstream::println!();
     anstream::println!("Done. Open a {} terminal, then for example:", ui::paint("new", ui::BOLD));
     ui::hint(format!("{} profile create work", brand::BIN_NAME));
-    ui::hint(format!("{} auth login claude --profile work      # sign the work account in once", brand::BIN_NAME));
-    ui::hint(format!("{} auth login claude --profile personal  # and the personal one", brand::BIN_NAME));
     ui::hint(format!("{} profile bind C:\\code\\company work      # this folder uses work", brand::BIN_NAME));
-    ui::hint("then just type `claude` anywhere — each terminal/folder uses its own account");
+    ui::hint("then type `claude` in that folder: it signs in once per account and remembers it");
     if cfg!(windows) {
         ui::hint(format!(
             "open \"{0}\" from the Start menu (or type `{1}`): PowerShell, cmd and bash commands all work there",

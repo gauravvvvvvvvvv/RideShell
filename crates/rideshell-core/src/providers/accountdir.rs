@@ -32,9 +32,6 @@ pub struct AccountDirProvider {
     /// `(VAR, "")` selects the directory itself, `(VAR, "file")` a file in it.
     pub vars: &'static [(&'static str, &'static str)],
     pub secrets: &'static [SecretSpec],
-    pub login: Option<&'static [&'static str]>,
-    pub logout: Option<&'static [&'static str]>,
-    pub status: Option<&'static [&'static str]>,
     pub isolation: &'static str,
     pub category: &'static str,
     /// Every new profile gets its own account automatically.
@@ -64,9 +61,6 @@ pub const CLAUDE: AccountDirProvider = AccountDirProvider {
         env: "ANTHROPIC_API_KEY",
         description: "Anthropic API key (instead of signing in with a Claude account)",
     }],
-    login: Some(&["auth", "login"]),
-    logout: Some(&["auth", "logout"]),
-    status: Some(&["auth", "status"]),
     isolation: "separate config directory per account (CLAUDE_CONFIG_DIR): login, settings, history and MCP config are per account",
     category: "AI coding agents",
     auto_attach: true,
@@ -79,9 +73,6 @@ pub const CODEX: AccountDirProvider = AccountDirProvider {
     tool: "codex",
     vars: &[("CODEX_HOME", "")],
     secrets: &[SecretSpec { key: "api_key", env: "OPENAI_API_KEY", description: "OpenAI API key" }],
-    login: Some(&["login"]),
-    logout: Some(&["logout"]),
-    status: Some(&["login", "status"]),
     isolation: "separate CODEX_HOME per account: auth.json, config and history are per account",
     category: "AI coding agents",
     auto_attach: true,
@@ -94,9 +85,6 @@ pub const GH: AccountDirProvider = AccountDirProvider {
     tool: "gh",
     vars: &[("GH_CONFIG_DIR", "")],
     secrets: &[SecretSpec { key: "token", env: "GH_TOKEN", description: "GitHub token (instead of gh auth login)" }],
-    login: Some(&["auth", "login"]),
-    logout: Some(&["auth", "logout"]),
-    status: Some(&["auth", "status"]),
     isolation: "separate GH_CONFIG_DIR per account (gh may keep the token itself in the OS credential store, keyed by host and user)",
     category: "Code hosting",
     auto_attach: true,
@@ -209,16 +197,6 @@ impl Provider for AccountDirProvider {
             Some(dir) => format!("config {dir}"),
             None => format!("account {}", self.account(settings, ctx)),
         }
-    }
-
-    fn login_args(&self) -> Option<&'static [&'static str]> {
-        self.login
-    }
-    fn logout_args(&self) -> Option<&'static [&'static str]> {
-        self.logout
-    }
-    fn status_args(&self) -> Option<&'static [&'static str]> {
-        self.status
     }
 }
 

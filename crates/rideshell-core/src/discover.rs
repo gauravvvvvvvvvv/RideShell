@@ -2,11 +2,10 @@
 //!
 //! RideShell keeps no list of tools. To connect any tool to an account it runs
 //! the tool's own help (`--help`, then `auth --help` / `help environment` when
-//! the help mentions them) and reads:
+//! the help mentions them) and reads the environment variables it mentions,
+//! sorted into:
 //!
-//! * sign-in commands: subcommands such as `login`, `auth login`, `auth:login`;
-//! * environment variables the help mentions, sorted into likely API-key
-//!   variables (`..._TOKEN`, `..._API_KEY`, `..._SECRET`) and likely
+//! * likely API-key variables (`..._TOKEN`, `..._API_KEY`, `..._SECRET`) and likely
 //!   config-location variables (`..._CONFIG_DIR`, `..._HOME`, `..._CONFIG`).
 //!
 //! These are suggestions for the user to confirm, not claims about the tool.
@@ -21,9 +20,6 @@ use serde::Serialize;
 
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct Discovery {
-    /// Sign-in argument lists, e.g. `["login"]`, `["auth", "login"]`.
-    #[serde(rename = "signIn")]
-    pub sign_in: Vec<String>,
     /// Variables that look like API keys or tokens.
     #[serde(rename = "keyVars")]
     pub key_vars: Vec<String>,
@@ -104,20 +100,6 @@ pub fn inspect(exe: &Path) -> Discovery {
 /// Pure analysis of help texts (`top` = main help, `more` = follow-up help).
 pub fn analyse(top: &str, more: &str) -> Discovery {
     let mut d = Discovery { help_found: top.trim().len() >= 20, ..Default::default() };
-    let cmds = subcommands(top);
-    const SIGNIN: &[&str] = &["login", "signin", "sign-in", "authenticate", "logon"];
-    for c in &cmds {
-        if SIGNIN.contains(&c.as_str()) || c.ends_with(":login") {
-            push_unique(&mut d.sign_in, c.clone());
-        }
-    }
-    if cmds.iter().any(|c| c == "auth") {
-        for c in subcommands(more) {
-            if SIGNIN.contains(&c.as_str()) {
-                push_unique(&mut d.sign_in, format!("auth {c}"));
-            }
-        }
-    }
     for var in env_vars(&format!("{top}\n{more}")) {
         let v = var.as_str();
         if ["TOKEN", "API_KEY", "APIKEY", "SECRET", "ACCESS_KEY", "AUTH_KEY", "PASSWORD"].iter().any(|k| v.contains(k))
@@ -185,11 +167,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_sign_in_and_variables_in_help() {
+    fn finds_variables_in_help() {
         let top = "Usage: tool <command>\n\nCommands:\n  deploy     Deploy\n  login      Sign in to your account\n  logout     Sign out\n  auth       Manage auth\n\nEnvironment:\n  TOOL_API_TOKEN     token to use instead of logging in\n  TOOL_CONFIG_DIR    where config is stored\n  LOG_LEVEL          verbosity\n";
         let more = "Commands:\n  login   Log in\n  status  Show status\n";
         let d = analyse(top, more);
-        assert_eq!(d.sign_in, vec!["login", "auth login"]);
         assert_eq!(d.key_vars, vec!["TOOL_API_TOKEN"]);
         assert_eq!(d.config_vars, vec!["TOOL_CONFIG_DIR"]);
         assert!(d.help_found);
@@ -198,10 +179,9 @@ mod tests {
     #[test]
     fn colon_style_commands_and_nothing_found() {
         let d = analyse("COMMANDS\n  auth:login  log in\n  apps:list   list apps\nHEROKU_API_KEY works too\n", "");
-        assert_eq!(d.sign_in, vec!["auth:login"]);
         assert_eq!(d.key_vars, vec!["HEROKU_API_KEY"]);
         let none = analyse("just a sentence with no commands at all", "");
-        assert!(none.sign_in.is_empty() && none.key_vars.is_empty());
+        assert!(none.key_vars.is_empty() && none.config_vars.is_empty());
     }
 
     #[test]

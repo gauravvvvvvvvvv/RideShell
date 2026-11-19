@@ -852,7 +852,7 @@ fn connect_reads_the_tools_own_help_and_never_signs_in_by_itself() {
     let out = e.cmd().env("PATH", &path).args(["connect", "faketool", "--profile", "work"]).output().unwrap();
     assert!(out.status.success(), "{}{}", stdout(&out), stderr(&out));
     let show = e.ok(&["identity", "show", "work"]);
-    assert!(show.contains("login = login"), "sign-in command taken from the tool's help: {show}");
+    assert!(!show.contains("login ="), "no sign-in command is stored: {show}");
     assert!(show.contains("key_vars = FAKETOOL_API_TOKEN"), "key variable taken from the tool's help: {show}");
-    assert!(!marker.exists(), "connect must never run the tool's sign-in without an explicit yes");
+    assert!(!marker.exists(), "connect never runs the tool's sign-in");
 }

@@ -61,7 +61,13 @@
       case 'exit': onExit(m.id, m.code); break;
       case 'spawnError': { const t = RS.tabs.get(m.id); if (t) { t.ended = true; t.term.write(`\r\n\x1b[38;5;210m${m.text}\x1b[0m\r\n`); renderTabs(); } break; }
       case 'toast': toast(m.text, m.kind); break;
-      case 'created': toast(`Account “${m.name}” created`, 'ok'); openTab({ profile: m.name }); break;
+      case 'created': {
+        toast(`Account “${m.name}” created`, 'ok');
+        const priv = m.privateHistory || [];
+        if (priv.length) toast(`${m.name}'s ${priv.join(' and ')} conversations are private to it. To see your existing ones, use “Share conversation history” in the tool's ⋯ menu (or turn sharing on for new accounts in Settings).`);
+        openTab({ profile: m.name });
+        break;
+      }
       case 'tools': onTools(m); break;
       case 'picked': openTab({ cwd: m.path }); break;
       case 'dropped': onDropped(m.items); break;
@@ -127,6 +133,7 @@
         const prev = tab.live.cwd;
         tab.live.cwd = data.slice(ci + 5);
         tab.atPrompt = true;
+        if (tab.switching) settleSwitch(tab);
         if (tab.live.cwd !== prev) rememberFolder(tab.live.cwd);
         if (tab.id === RS.active) { renderStatus(); renderProfiles(); if (tab.live.cwd !== prev) followTab(); }
         renderTabs();
@@ -165,6 +172,8 @@
   function onExit(id, code) {
     const tab = RS.tabs.get(id);
     if (!tab) return;
+    // A command tab (an install, a sign-in) may have changed what is installed.
+    if (tab.command) post({ t: 'state' });
     if (code === 0 && !tab.command) { closeTab(id); return; }
     tab.ended = true;
     tab.term.write(`\r\n\x1b[38;5;245m── session ended${code != null ? ` (exit code ${code})` : ''} · Enter to restart · Ctrl+W to close ──\x1b[0m\r\n`);
@@ -208,8 +217,9 @@
       const prof = t.live.profile || t.profile || defaultProfile();
       const b = el('div', 'tab' + (id === RS.active ? ' active' : '') + (t.ended ? ' ended' : ''));
       if (prof) b.style.setProperty('--tab-color', colorOf(prof).solid);
-      b.innerHTML = `<span class="dot"></span><span class="label">${esc(t.title)}${prof ? `<small>${esc(prof)}</small>` : ''}</span><button class="x" title="Close (Ctrl+W)">${I('close')}</button>`;
-      b.title = (t.live.cwd || '') + (t.live.admin ? '  · Administrator' : '');
+      const small = t.switching ? `${esc(prof || '')} → ${esc(t.switching.name)}…` : prof ? esc(prof) : '';
+      b.innerHTML = `<span class="dot"></span><span class="label">${esc(t.title)}${small ? `<small>${small}</small>` : ''}</span><button class="x" title="Close (Ctrl+W)">${I('close')}</button>`;
+      b.title = [t.title, prof ? `account: ${prof}` : '', t.live.cwd || '', t.live.admin ? 'Administrator' : ''].filter(Boolean).join('\n');
       b.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); closeTab(id); } });
       b.addEventListener('click', (e) => { if (e.target.closest('.x')) closeTab(id); else activate(id); });
       nav.appendChild(b);
@@ -221,6 +231,7 @@
   function switchAccount(name) {
     const t = activeTab();
     if (!t || t.ended) { openTab({ profile: name }); return; }
+    if (t.switching) { toast(`Still switching to ${t.switching.name}…`); return; }
     if (!t.atPrompt) {
       // A program (Claude Code, an editor, ...) owns the input: typing the switch
       // command would land inside it. It also could not change the account of a
@@ -229,11 +240,25 @@
       toast(`A program is running in this tab, so ${name} opened in a new tab in the same folder`);
       return;
     }
-    // Esc clears whatever is typed (PSReadLine), then the session switches.
+    // The shell is idle at its prompt: Esc clears whatever is typed (PSReadLine),
+    // then the session switches. The account shown changes only when the
+    // shell's next prompt reports it (settleSwitch), never on the click itself.
+    t.atPrompt = false;
+    t.switching = { name, timer: setTimeout(() => settleSwitch(t, true), 8000) };
     post({ t: 'input', id: t.id, data: '\x1b' + `rideshell profile use ${name}\r` });
-    t.live.profile = name;
-    renderTabs(); renderProfiles(); renderStatus();
+    renderTabs();
     t.term.focus();
+  }
+
+  // The shell reported back after a switch (or never did): confirm or say it failed.
+  function settleSwitch(t, timedOut = false) {
+    const s = t.switching;
+    if (!s) return;
+    clearTimeout(s.timer);
+    t.switching = null;
+    if (timedOut) toast(`No answer from the shell: this tab may not have switched to ${s.name}`, 'error');
+    else if (t.live.profile !== s.name) toast(`This tab could not switch to ${s.name}; it is still ${t.live.profile || 'without an account'}`, 'error');
+    renderTabs(); renderProfiles(); renderStatus();
   }
 
   function runInNewTab(command, opts = {}) { return openTab({ command, ...opts }); }
@@ -272,19 +297,7 @@
         for (const t of p.tools) {
           const badge = t.history === 'original' ? '<i class="hb" title="Uses your original folder: its sign-in and all your conversations"></i>'
             : t.history === 'shared' ? '<i class="hb shared" title="Own sign-in, shared conversation history"></i>' : '';
-          const r = el('div', 'tool-row', `${toolIcon(t, 'tiny')}<span class="t-name" title="${esc(t.summary)}">${esc(t.name)}</span>${badge}`);
-          if (t.login) {
-            const login = el('button', '', 'Sign in');
-            login.title = `Run ${t.tool}'s own sign-in for ${p.name}`;
-            login.onclick = () => signIn(p.name, t.id, t.name);
-            r.appendChild(login);
-          }
-          if (t.keyCmd) {
-            const key = el('button', '', 'API key');
-            key.title = `Set ${t.keyVars.join(', ')} for ${p.name}`;
-            key.onclick = () => changeKey(p, t);
-            r.appendChild(key);
-          }
+          const r = el('div', 'tool-row', `${toolIcon(t, 'tiny')}<span class="t-name" title="${esc(t.summary ? `${t.name} · ${t.summary}` : t.name)}">${esc(t.name)}</span>${badge}`);
           const more = el('button', 'tmore', '⋯');
           more.title = 'More';
           more.onclick = (e) => { const rc = e.currentTarget.getBoundingClientRect(); toolMenu(p, t, rc.left, rc.bottom + 4); };
@@ -300,20 +313,10 @@
     }
   }
 
-  function changeKey(p, t) {
-    if (!t.keyCmd) return;
-    runInNewTab(t.keyCmd, { profile: p.name, title: `API key · ${t.name}`, icon: 'key' });
-    setTimeout(() => post({ t: 'state' }), 4000);
-  }
-
   // The per-tool menu: everything about one tool account lives here.
   function toolMenu(p, t, x, y) {
     const items = [];
-    if (t.login) items.push({ html: toolIcon(t, 'tiny'), label: `Sign in to ${t.name}`, run: () => signIn(p.name, t.id, t.name) });
-    if (t.status) items.push({ icon: 'pulse', label: 'Check sign-in status', run: () => runInNewTab(`rideshell auth status ${t.id} --profile ${p.name}`, { profile: p.name, title: `Status · ${t.name}`, icon: 'pulse' }) });
-    if (t.keyCmd) items.push({ icon: 'key', label: `API key (${t.keyVars.join(', ')})`, run: () => changeKey(p, t) });
     if (t.history) {
-      items.push('-');
       const n = t.conversations ?? 0;
       if (t.history !== 'original') {
         items.push({ icon: 'folder', label: `Use original ${t.name} folder (sign-in + all conversations)`, run: () => historyAction('adopt', p, t) });
@@ -321,8 +324,8 @@
       if (t.history === 'own') items.push({ icon: 'branch', label: 'Share conversation history (keep own sign-in)', run: () => historyAction('share', p, t) });
       if (t.history === 'shared') items.push({ icon: 'close', label: 'Stop sharing history', run: () => historyAction('separate', p, t) });
       items.push({ icon: 'doc', label: `${n} conversation${n === 1 ? '' : 's'} here · details`, run: () => runInNewTab('rideshell history status', { title: 'History', icon: 'doc' }) });
+      items.push('-');
     }
-    items.push('-');
     items.push({ icon: 'close', label: `Disconnect ${t.name}`, run: () => {
       if (confirm(`Disconnect ${t.name} from ${p.name}?`)) {
         runInNewTab(`rideshell identity unset ${p.name} ${t.id}`, { profile: p.name, title: `Disconnect · ${t.name}`, icon: 'close' });
@@ -334,7 +337,7 @@
   function historyAction(action, p, t) {
     const text = {
       adopt: `${p.name} will use your original ${t.name} folder: the sign-in there and all its conversations. Conversations ${p.name} had in its own folder are moved there first. Continue?`,
-      share: `${p.name} keeps its own ${t.name} sign-in but will see the same conversations as your original folder. Its own conversations are added to them. Continue?`,
+      share: `${p.name} keeps its own ${t.name} sign-in but will see the same conversations as your original folder, and as every other account that shares it. Its own conversations are added to them. Only do this for accounts whose conversations may mix (not work and personal, unless you want that). Continue?`,
       separate: `${p.name} gets its own ${t.name} history again. The shared conversations stay where they are. Continue?`,
     }[action];
     if (!confirm(text)) return;
@@ -350,41 +353,6 @@
     runInNewTab(`rideshell connect --profile ${p.name}`, { profile: p.name, title: 'Connect a tool', icon: 'plus' });
     setTimeout(() => post({ t: 'state' }), 8000);
   }
-
-  // ----- sign-in guide -------------------------------------------------------------
-
-  let signing = null;
-  function signIn(profile, tool, displayName) {
-    signing = { profile, tool };
-    const name = displayName || toolName(tool);
-    $('#si-title').textContent = `Sign ${profile} in to ${name}`;
-    $('#si-text').innerHTML = `Runs ${esc(name)}'s own sign-in for <b>${esc(profile)}</b>.`;
-    const tips = [
-      `If your browser is already signed in to ${name} with another account, use <b>switch account</b> or <b>sign out</b> on the page that opens, then sign in with the account you want.`,
-      'The sign-in link is also shown in the terminal: you can paste it into another browser or browser profile.',
-    ];
-    $('#si-tips').innerHTML = tips.map((t) => `<li>${t}</li>`).join('');
-    $('#si-email-row').hidden = tool !== 'claude';
-    $('#si-email').value = '';
-    document.querySelector('input[name="si-browser"][value="default"]').checked = true;
-    $('#signin').hidden = false;
-    setTimeout(() => (tool === 'claude' ? $('#si-email') : $('#signin .primary')).focus(), 30);
-  }
-  $('#signin-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!signing) return;
-    const { profile, tool } = signing;
-    const browser = document.querySelector('input[name="si-browser"]:checked').value;
-    const email = $('#si-email').value.trim();
-    let cmd = `rideshell auth login ${tool} --profile ${profile}`;
-    if (browser === 'private') cmd += ' --browser private';
-    if (email && tool === 'claude') cmd += ` --email '${email.replace(/'/g, "''")}'`;
-    $('#signin').hidden = true;
-    signing = null;
-    runInNewTab(cmd, { profile, title: `Sign in · ${toolName(tool)}`, icon: 'login' });
-  });
-  $('#si-cancel').onclick = () => { $('#signin').hidden = true; signing = null; activeTab()?.term.focus(); };
-  $('#signin').addEventListener('mousedown', (e) => { if (e.target.id === 'signin') { $('#signin').hidden = true; signing = null; } });
 
   function profileMenu(p, x, y) {
     const items = [
@@ -764,6 +732,14 @@
   function hideMenu() { $('#menu').hidden = true; }
   document.addEventListener('mousedown', (e) => { if (!e.target.closest('#menu')) hideMenu(); });
 
+  // Labels cut off with "…" show their full text on hover.
+  const CLIPPED = '.tab .label, .profile .name, .profile .desc, .tool-row .t-name, .app .a-name, .sb-item, .sb-song, .trow .tname, .trow .tpath, .frow .fname, .sb-promo';
+  document.addEventListener('mouseover', (e) => {
+    const n = e.target.closest?.(CLIPPED);
+    // Skip labels that already explain themselves (own or a parent's tooltip, e.g. a folder's full path).
+    if (n && !n.closest('[title]') && n.scrollWidth > n.clientWidth + 1) n.title = n.textContent.trim();
+  });
+
   function toast(text, kind = '') {
     const t = el('div', 'toast ' + kind);
     t.textContent = text;
@@ -804,9 +780,6 @@
     }
     const cur = activeProfile();
     const cp = (RS.state?.profiles || []).find((p) => p.name === cur);
-    for (const t of (cp?.tools || []).filter((t) => t.login)) {
-      acts.push({ group: 'Accounts', html: toolIcon(t, 'tiny'), label: `Sign ${cur} in to ${t.name}`, run: () => signIn(cur, t.id, t.name) });
-    }
     if (cp) add('Accounts', 'plus', `Connect a tool to ${cur}…`, () => openConnect(cp));
     if (!RS.state?.elevated) add('System', 'shield', 'Open as Administrator', openAdmin);
     add('General', 'terminal', 'Browse installed tools', openTools);
@@ -908,9 +881,9 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('.xterm')) return;
-    if (e.key === 'Escape') { hideMenu(); if (!$('#signin').hidden) { $('#signin').hidden = true; signing = null; } if (!$('#modal').hidden) { $('#modal').hidden = true; } if (!$('#tools').hidden) closeTools(); }
+    if (e.key === 'Escape') { hideMenu(); if (!$('#modal').hidden) { $('#modal').hidden = true; } if (!$('#tools').hidden) closeTools(); }
     const act = shortcut(e);
-    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden && $('#signin').hidden ) { e.preventDefault(); act(); }
+    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden) { e.preventDefault(); act(); }
   });
 
   function zoom(step) {

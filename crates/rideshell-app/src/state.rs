@@ -31,15 +31,9 @@ pub struct ToolAccount {
     pub tool: String,
     /// "account", "token", "identity" or "custom" (how RideShell set it up).
     pub kind: &'static str,
-    /// The tool has a sign-in command (`rideshell auth login <id>` runs it).
-    pub login: bool,
-    pub status: bool,
     /// API-key variables this tool reads (e.g. CLOUDFLARE_API_TOKEN).
     #[serde(rename = "keyVars")]
     pub key_vars: Vec<String>,
-    /// PowerShell line that asks for those keys.
-    #[serde(rename = "keyCmd")]
-    pub key_cmd: Option<String>,
     pub summary: String,
     /// Conversation history (Claude Code, Codex): "original", "shared" or "own".
     pub history: Option<&'static str>,
@@ -67,8 +61,6 @@ pub struct ProviderView {
     pub name: &'static str,
     pub tool: &'static str,
     pub category: &'static str,
-    /// The tool has a sign-in command.
-    pub signin: bool,
     /// API-key variables it reads.
     #[serde(rename = "keyVars")]
     pub key_vars: Vec<&'static str>,
@@ -272,7 +264,6 @@ pub fn load(paths: &Paths, cli_found: bool) -> StateView {
                     name: p.display_name(),
                     tool: p.tool(),
                     category: p.category(),
-                    signin: p.login_args().is_some(),
                     key_vars: p.secrets().iter().map(|s| s.env).collect(),
                     installed: exe.is_some(),
                     icon: exe.map(|e| e.to_string_lossy().into_owned()),
@@ -331,26 +322,10 @@ fn load_profiles(paths: &Paths) -> Result<Vec<ProfileView>> {
                 } else {
                     "account"
                 },
-                login: if custom { settings.contains_key("login") } else { prov.login_args().is_some() },
-                status: prov.status_args().is_some(),
                 key_vars: if custom {
                     providers::catalog::custom_key_vars(&settings)
                 } else {
                     prov.secrets().iter().map(|s| s.env.to_string()).collect()
-                },
-                key_cmd: if custom {
-                    let vars = providers::catalog::custom_key_vars(&settings);
-                    (!vars.is_empty()).then(|| {
-                        vars.iter()
-                            .map(|v| format!("rideshell secret set {v} --profile {}", p.name))
-                            .collect::<Vec<_>>()
-                            .join("; ")
-                    })
-                } else if prov.secrets().is_empty() {
-                    None
-                } else {
-                    let keys: Vec<&str> = prov.secrets().iter().map(|s| s.key).collect();
-                    Some(format!("rideshell identity set {} {id} {}", p.name, keys.join(" ")))
                 },
                 summary: prov.summary(&settings, &ctx),
                 history,
@@ -372,7 +347,15 @@ fn load_profiles(paths: &Paths) -> Result<Vec<ProfileView>> {
 }
 
 /// Create a profile (and make it the default if it is the first one).
-pub fn create_profile(paths: &Paths, cli: Option<&std::path::Path>, name: &str, description: &str) -> Result<()> {
+/// Create an account. Returns the tools (e.g. "Claude Code") whose
+/// conversation history stays private to the new account; with
+/// `[history] share_new_accounts` on they share it instead.
+pub fn create_profile(
+    paths: &Paths,
+    cli: Option<&std::path::Path>,
+    name: &str,
+    description: &str,
+) -> Result<Vec<&'static str>> {
     paths.ensure()?;
     rideshell_core::config::Config::write_default_if_missing(paths)?;
     let mut store = Store::open(&paths.db_file())?;
@@ -384,6 +367,7 @@ pub fn create_profile(paths: &Paths, cli: Option<&std::path::Path>, name: &str, 
     // Its own Claude Code / Codex / GitHub CLI accounts (the first profile
     // keeps the existing logins), routed through RideShell when installed.
     let tools = providers::attach_default_accounts(&mut store, name)?;
+    let private = new_account_history(paths, &store, name)?;
     drop(store);
     if let Some(cli) = cli {
         let dir = paths.shims_dir();
@@ -393,7 +377,30 @@ pub fn create_profile(paths: &Paths, cli: Option<&std::path::Path>, name: &str, 
             }
         }
     }
-    Ok(())
+    Ok(private)
+}
+
+/// Apply `[history] share_new_accounts` to a new account's Claude Code / Codex.
+fn new_account_history(paths: &Paths, store: &Store, name: &str) -> Result<Vec<&'static str>> {
+    let share = rideshell_core::config::Config::load(paths).map(|c| c.history.share_new_accounts).unwrap_or(false);
+    let p = store.require_profile(name)?;
+    let accounts = paths.accounts_dir();
+    let ctx = providers::ProviderContext { profile: name, accounts_dir: &accounts };
+    let mut ids = store.identities(p.id)?;
+    let mut private = Vec::new();
+    for (tool, provider) in [("claude", &providers::CLAUDE), ("codex", &providers::CODEX)] {
+        let Some(settings) = ids.remove(tool) else { continue };
+        let Some(spec) = rideshell_core::history::spec(tool) else { continue };
+        let Some(original) = providers::default_account_dir(tool).filter(|o| o.is_dir()) else { continue };
+        let dir = provider.config_dir(&settings, &ctx);
+        if same_dir(&dir, &original) || rideshell_core::history::is_shared(&spec, &dir) {
+            continue;
+        }
+        if !share || rideshell_core::history::share(&spec, &dir, &original).is_err() {
+            private.push(provider.display_name);
+        }
+    }
+    Ok(private)
 }
 
 pub fn set_default(paths: &Paths, name: &str) -> Result<()> {

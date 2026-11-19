@@ -12,7 +12,9 @@ use crate::UserEvent;
 
 pub struct Session {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    /// Keystrokes go to a per-tab writer thread: a program that stops reading
+    /// its input can then stall only its own tab, never the window.
+    input: std::sync::mpsc::Sender<Vec<u8>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
 }
 
@@ -63,7 +65,16 @@ pub fn spawn(id: u32, spec: Spec, proxy: EventLoopProxy<UserEvent>) -> Result<Se
     drop(pair.slave);
     let killer = child.clone_killer();
     let mut reader = pair.master.try_clone_reader()?;
-    let writer = pair.master.take_writer()?;
+    let mut writer = pair.master.take_writer()?;
+    let (input, keys) = std::sync::mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        // Ends when the tab is closed (sender dropped) or the session is gone.
+        for data in keys {
+            if writer.write_all(&data).and_then(|()| writer.flush()).is_err() {
+                break;
+            }
+        }
+    });
 
     let data_proxy = proxy.clone();
     std::thread::spawn(move || {
@@ -85,13 +96,12 @@ pub fn spawn(id: u32, spec: Spec, proxy: EventLoopProxy<UserEvent>) -> Result<Se
         let _ = proxy.send_event(UserEvent::PtyExit(id, code));
     });
 
-    Ok(Session { master: pair.master, writer, killer })
+    Ok(Session { master: pair.master, input, killer })
 }
 
 impl Session {
     pub fn write(&mut self, data: &[u8]) {
-        let _ = self.writer.write_all(data);
-        let _ = self.writer.flush();
+        let _ = self.input.send(data.to_vec());
     }
 
     pub fn resize(&self, cols: u16, rows: u16) {

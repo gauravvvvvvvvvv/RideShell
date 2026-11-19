@@ -1,4 +1,3 @@
-pub mod browser;
 mod config;
 mod connect;
 mod doctor;
@@ -94,7 +93,6 @@ pub fn dispatch(command: Option<Command>) -> Result<i32> {
         Command::Secret(cmd) => secret::run(&ctx, cmd),
         Command::History(cmd) => history::run(&ctx, cmd),
         Command::Project(cmd) => secret::project(&ctx, cmd),
-        Command::Auth(cmd) => identity::auth(&ctx, cmd),
         Command::Shim(cmd) => shim::run(&ctx, cmd),
         Command::Install(args) => install::run(&ctx, args),
         Command::Run(args) => run::run(&ctx, args),

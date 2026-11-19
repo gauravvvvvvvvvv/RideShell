@@ -61,8 +61,6 @@ Building from source: see [Build](#build).
 ```powershell
 rideshell profile create personal      # your first account keeps your existing logins
 rideshell profile create work          # every new account starts with its own, empty logins
-
-rideshell auth login claude --profile work
 ```
 
 Then, in RideShell App, click **work** or **personal** in the sidebar, or in any terminal:
@@ -73,12 +71,14 @@ rideshell profile use work          rideshell profile use personal
 claude                              claude            # both run at the same time
 ```
 
+The first time you run `claude` (or `codex`, `gh`) as a new account, the tool asks you to sign
+in, the way it always does. That sign-in is saved to that account only. RideShell has no
+sign-in screens of its own, and API keys are just the account's variables (`rideshell secret set`).
+
 ```powershell
 rideshell profile bind C:\code\acme work    # this folder (and below) is always "work"
 rideshell run --profile personal -- claude  # one command, one account
 ```
-
-`rideshell auth status` shows which account every profile is signed in as.
 
 ## RideShell App
 
@@ -88,11 +88,11 @@ rideshell run --profile personal -- claude  # one command, one account
 | **Files:** favorites, places, project folders and a browser that follows the tab | **Settings:** themes like Windows Terminal, fonts, sidebar, shell, privacy |
 
 * **Accounts sidebar:** one click switches the current tab's account, and **+** opens a new tab as
-  it. Each account lists its tools with **Sign in** and **API key**, and a ⋯ menu. The sign-in guide
-  explains how to use a different account in your browser, can pre-fill the e-mail, and offers
-  a private window if *you* choose it.
+  it. Each account lists its connected tools, with a ⋯ menu for conversation history and
+  disconnecting. If a program is running in the tab, the account opens in a new tab instead.
 * **Launch:** Claude Code, Codex, GitHub CLI, Git, Git Bash, Command Prompt, PowerShell 7,
-  Node.js, Python, with their real icons. Missing ones offer their official installer.
+  Node.js, Python, with their real icons. Missing ones offer their official installer, and a tool
+  you install while the app is open shows up without a restart.
   **Add** pins any installed tool. Right-click to remove one.
 * **Installed tools** (`Ctrl+Shift+E`, or `rideshell tools`): every command-line tool on your
   PATH, by source (npm, winget, Scoop, cargo, Python, Git…). **Run** it, ☆ **pin** it, or
@@ -142,13 +142,9 @@ Each line is checked when you press Enter:
 
 RideShell has no list of supported tools. **Connect a tool** shows the command-line tools
 installed on your PC. When you pick one, RideShell reads that tool's own `--help` and
-pre-fills what it finds:
-
-* its **sign-in command** (`login`, `auth login`…);
-* the **variables** it mentions for API keys or a config folder.
-
-You confirm or edit them, or leave them empty. Afterwards the tool has **Sign in** and/or
-**API key** buttons for that account.
+pre-fills the **variables** it mentions for API keys or a config folder. You confirm or edit
+them, or leave them empty. To sign in, run the tool in a tab of that account: it uses its own
+sign-in, and the login is saved to that account.
 
 * **Keys** are stored in the OS credential store and given to the tool when that account runs it.
 * **A config-folder variable** gives the account its own folder for that tool. It reaches only
@@ -158,23 +154,26 @@ You confirm or edit them, or leave them empty. Afterwards the tool has **Sign in
 
 ```powershell
 rideshell inspect vercel                       # what vercel's own help offers
-rideshell identity set work custom tool=vercel "login=login" key_vars=VERCEL_TOKEN
-rideshell auth login custom-vercel --profile work
+rideshell identity set work custom tool=vercel folder_var=VERCEL_HOME key_vars=VERCEL_TOKEN
+rideshell secret set VERCEL_TOKEN --profile work   # or sign in: run `vercel login` as work
 ```
 
 ## Your Claude Code and Codex conversations
 
 Claude Code and Codex keep your conversations (what `claude --resume` lists) in their config
-folder. A new account keeps its own sign-in but **shares conversation history** with the
-original folder by default, so `claude --resume` still lists the conversations you already had.
-Per account you can change that:
+folder. A new account starts with **its own, private** conversation history, so work and
+personal never mix. If you want your existing conversations in an account, share them:
 
 * **Use the original folder** (`~/.claude`, `~/.codex`): the account uses your existing
   sign-in **and** all your conversations. Conversations it had in its own folder are moved over,
   and nothing is overwritten. Your *first* account does this automatically.
-* **Share history** (the default for new accounts): the account keeps its **own** sign-in but
-  sees the same conversations (a folder link, so no copies).
-* **Separate**: the account gets its own, empty history (`rideshell history separate`).
+* **Share history**: the account keeps its **own** sign-in but sees the same conversations
+  (a folder link, so no copies). Every account that shares sees all of them.
+* **Separate**: back to its own history (`rideshell history separate`).
+
+To share for every new account, set `share_new_accounts = true` under `[history]` in the config
+file (`rideshell config path`), or turn on *Share conversation history with new accounts* in the
+app's Settings → Profiles.
 
 ```powershell
 rideshell history status                       # where each account's conversations live

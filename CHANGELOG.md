@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+* Conversation history of new Claude Code / Codex accounts is **private by default** again, so
+  work and personal never mix. Share it per account (`rideshell history share`, or the tool's ⋯
+  menu), or for every new account with `[history] share_new_accounts = true` (Settings → Profiles).
+  Creating or connecting an account says how.
+* App: switching accounts only happens at an idle prompt, and the account shown changes only once
+  the shell confirms it; otherwise the tab says it could not switch.
+* App: folder listings, account creation and keystrokes no longer run on the window's thread, so
+  a slow folder or a program that stops reading input can't freeze the window.
+* App: labels cut off with "…" show their full text on hover.
+* Removed `rideshell auth` (login / logout / status) and the private-browser sign-in helper. Tools
+  sign in by themselves: run the tool in a tab of the account, and its login is saved there.
+  `connect` and custom tools no longer ask for or store a sign-in command.
+* App: account rows no longer have Sign in / API key buttons. Each tool signs in by itself when
+  you run it in a profile, and keys are that profile's own variables (`rideshell secret set`).
+* App: tools installed while the app is open (winget, setups) appear in Launch and "All installed
+  tools" without a restart; new tabs get the updated PATH too.
+
 ## 0.1.0 (2026-11-20)
 
 First release. Windows 11 is the tested platform.
@@ -24,8 +43,7 @@ First release. Windows 11 is the tested platform.
   and new profiles start fresh.
 * Git identities, plain variables per profile and per project
 * Secrets in the OS credential store, per profile or per project, injected only into launched tools
-* `auth login/logout/status` with a sign-in guide, `--email` and an optional `--browser private`
-* Tool shims: `claude`, `codex`, `gh` and any `shim add <tool>` use the right account in every terminal
+* Tool shims: `claude`, `codex`, `gh` and any `shim add <tool>` use the right account in RideShell terminals
 
 * Connect any installed tool to an account. RideShell reads the tool's own help to pre-fill
   its sign-in command and the variables it mentions (`rideshell inspect <tool>`), and you

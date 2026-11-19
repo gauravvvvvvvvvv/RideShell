@@ -1,13 +1,10 @@
-use std::process::Command;
-
 use anyhow::{bail, Context, Result};
+use rideshell_core::brand;
 use rideshell_core::providers::{self, Provider, ProviderContext, Severity};
-use rideshell_core::store::{Profile, Store};
-use rideshell_core::{brand, exec, shims};
+use rideshell_core::store::Profile;
 
-use super::{history, profile::check_not_secret, resolve_here, run, secret, shim, Ctx};
-use crate::cli::BrowserArg;
-use crate::cli::{AuthCommand, IdentityCommand, Scope};
+use super::{history, profile::check_not_secret, resolve_here, secret, shim, Ctx};
+use crate::cli::{IdentityCommand, Scope};
 use crate::ui;
 
 pub fn run(ctx: &Ctx, cmd: IdentityCommand) -> Result<i32> {
@@ -126,8 +123,13 @@ pub fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Res
         shim::add(ctx, tool)?;
         shim::path_hint(ctx);
     }
-    if provider.login_args().is_some() || settings.contains_key("login") {
-        ui::hint(format!("sign in: {} auth login {} --profile {}", brand::BIN_NAME, identity_id, p.name));
+    if provider.id() != "git" {
+        ui::hint(format!(
+            "sign in from the tool itself: open a {} tab as {} and run `{}`",
+            brand::APP_NAME,
+            p.name,
+            settings.get("tool").map(String::as_str).unwrap_or(provider.tool())
+        ));
     }
     if !provider.secrets().is_empty() {
         let keys: Vec<&str> = provider.secrets().iter().map(|s| s.key).collect();
@@ -226,190 +228,5 @@ pub fn providers() -> Result<i32> {
         "Any other tool: `{bin} secret set KEY --profile P`, `{bin} profile env set P KEY VALUE`, `{bin} shim add <tool>`.",
         bin = brand::BIN_NAME
     );
-    Ok(0)
-}
-
-// ----- auth ------------------------------------------------------------------
-
-pub fn auth(ctx: &Ctx, cmd: AuthCommand) -> Result<i32> {
-    match cmd {
-        AuthCommand::Login { provider, profile, browser, email } => {
-            login_logout(ctx, &provider, profile.as_deref(), true, browser, email.as_deref())
-        }
-        AuthCommand::Logout { provider, profile } => {
-            login_logout(ctx, &provider, profile.as_deref(), false, BrowserArg::Default, None)
-        }
-        AuthCommand::Status { provider, profile } => status(ctx, provider.as_deref(), profile.as_deref()),
-    }
-}
-
-fn pick_profile(ctx: &Ctx, store: &Store, name: Option<&str>) -> Result<Profile> {
-    match name {
-        Some(n) => store.require_profile(n),
-        None => resolve_here(ctx, store, None, None)?
-            .profile
-            .with_context(|| "no profile is active here; pass --profile".to_string()),
-    }
-}
-
-pub fn login_logout(
-    ctx: &Ctx,
-    provider_id: &str,
-    profile: Option<&str>,
-    login: bool,
-    browser: BrowserArg,
-    email: Option<&str>,
-) -> Result<i32> {
-    let provider = provider_or_explain(provider_id)?;
-    let mut store = ctx.store()?;
-    let p = pick_profile(ctx, &store, profile)?;
-    // Custom tools keep their own sign-in arguments.
-    let custom_settings = if providers::catalog::is_custom_id(provider_id) {
-        Some(store.identities(p.id)?.remove(provider_id).with_context(|| format!("{} has no {provider_id}", p.name))?)
-    } else {
-        None
-    };
-    let args: Vec<String> = match &custom_settings {
-        Some(s) if login => providers::catalog::custom_login(s).with_context(|| {
-            format!("no sign-in command saved for {provider_id} (identity set ... login=\"auth login\")")
-        })?,
-        Some(_) => bail!("custom tools have no saved sign-out command; run the tool's own"),
-        None => if login { provider.login_args() } else { provider.logout_args() }
-            .with_context(|| format!("{} has no sign-in command", provider.display_name()))?
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-    };
-    let tool_name: String = match &custom_settings {
-        Some(s) => s.get("tool").cloned().unwrap_or_default(),
-        None => provider.tool().to_string(),
-    };
-    if custom_settings.is_none() && !store.identities(p.id)?.contains_key(provider.id()) {
-        // First use: give this profile its own account with defaults.
-        store.set_identity(&p.name, provider.id(), &Default::default())?;
-        ui::success(format!("{} now has its own {} account", ui::accent(&p.name), provider.display_name()));
-        history::share_by_default(ctx, &store, &p, provider.id());
-        if provider.auto_shim() {
-            shim::add(ctx, provider.tool())?;
-        }
-    }
-    let mut prepared = run::prepare(ctx, &store, Some(&p.name), None, true)?;
-    run::add_tool_scoped(ctx, &store, &mut prepared, &tool_name)?;
-    let others: Vec<String> = store.list_profiles()?.into_iter().filter(|o| o.id != p.id).map(|o| o.name).collect();
-    drop(store);
-    let real = shims::find_real(&tool_name, Some(&ctx.paths.shims_dir()))?;
-    let mut args = args;
-    if login {
-        if let Some(e) = email {
-            if provider.id() == "claude" {
-                args.extend(["--email".to_string(), e.to_string()]);
-            } else {
-                ui::warn(format!("{} does not support pre-filling an e-mail; ignored", provider.display_name()));
-            }
-        }
-        if browser == BrowserArg::Private {
-            let me = std::env::current_exe().context("cannot determine the executable path")?;
-            let me = me.to_string_lossy().into_owned();
-            prepared.plan.set.push(("BROWSER".into(), me.clone()));
-            prepared.plan.set.push(("GH_BROWSER".into(), me));
-            prepared.plan.set.push((super::browser::PRIVATE_ENV.into(), "1".into()));
-        }
-        sign_in_help(&tool_name, &p.name, &others, browser);
-    }
-    anstream::eprintln!(
-        "{} {} {} for profile {}",
-        ui::dim(format!("{} ▸", brand::BIN_NAME)),
-        tool_name,
-        args.join(" "),
-        ui::accent(&p.name)
-    );
-    exec::run(&real.to_string_lossy(), &args, &prepared.plan, None)
-}
-
-/// What to expect before the tool opens its sign-in page.
-fn sign_in_help(tool: &str, profile: &str, others: &[String], browser: BrowserArg) {
-    anstream::eprintln!();
-    anstream::eprintln!("  Signing {} in to {tool}.", ui::accent(profile));
-    match browser {
-        BrowserArg::Default => {
-            if !others.is_empty() {
-                anstream::eprintln!(
-                    "  {}",
-                    ui::dim(format!(
-                        "Your browser may already be signed in as the account you use in {}.",
-                        others.join(", ")
-                    ))
-                );
-                anstream::eprintln!(
-                    "  {}",
-                    ui::dim("To use a different account, switch account or sign out on the page that opens,")
-                );
-                anstream::eprintln!(
-                    "  {}",
-                    ui::dim("or copy the link shown below into another browser or browser profile.")
-                );
-                anstream::eprintln!(
-                    "  {}",
-                    ui::dim(
-                        "(A private window: add `--browser private`; pre-fill an e-mail: `--email you@example.com`.)"
-                    )
-                );
-            }
-        }
-        BrowserArg::Private => {
-            anstream::eprintln!("  {}", ui::dim("The sign-in page opens in a private window of your default browser."));
-        }
-    }
-    anstream::eprintln!();
-}
-
-fn status(ctx: &Ctx, provider_id: Option<&str>, profile: Option<&str>) -> Result<i32> {
-    let wanted: Vec<&'static dyn Provider> = match provider_id {
-        Some(id) => vec![provider_or_explain(id)?],
-        None => providers::registry().iter().copied().filter(|p| p.status_args().is_some()).collect(),
-    };
-    let store = ctx.store()?;
-    let profiles = match profile {
-        Some(n) => vec![store.require_profile(n)?],
-        None => store.list_profiles()?,
-    };
-    let mut any = false;
-    for provider in wanted {
-        let Some(args) = provider.status_args() else { continue };
-        let Ok(real) = shims::find_real(provider.tool(), Some(&ctx.paths.shims_dir())) else {
-            continue;
-        };
-        for p in &profiles {
-            let Some(settings) = store.identities(p.id)?.remove(provider.id()) else { continue };
-            any = true;
-            let accounts = ctx.paths.accounts_dir();
-            anstream::println!(
-                "{} {} {}",
-                ui::accent(&p.name),
-                ui::paint(provider.display_name(), ui::BOLD),
-                ui::dim(provider.summary(&settings, &pctx(ctx, p, &accounts)))
-            );
-            let prepared = run::prepare(ctx, &store, Some(&p.name), None, true)?;
-            let mut cmd = Command::new(&real);
-            cmd.args(args.iter());
-            prepared.plan.apply_to_command(&mut cmd);
-            match cmd.output() {
-                Ok(out) => {
-                    let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
-                    for line in text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with("WARNING: proceeding")) {
-                        anstream::println!("  {line}");
-                    }
-                }
-                Err(e) => ui::warn(format!("cannot run {}: {e}", real.display())),
-            }
-            anstream::println!();
-        }
-    }
-    if !any {
-        anstream::println!(
-            "No profile has a tool account yet. Example: `{} identity set work claude`.",
-            brand::BIN_NAME
-        );
-    }
     Ok(0)
 }

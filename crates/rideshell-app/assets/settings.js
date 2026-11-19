@@ -299,6 +299,7 @@
     row(d, 'Switch account by folder', 'Folders bound to an account switch automatically when you cd into them.', toggle(cfg.shell.auto_apply, (v) => { cfg.shell.auto_apply = v; save(); }));
     row(d, 'Announce account switches', 'One short line when the account changes.', toggle(cfg.shell.notify_on_switch, (v) => { cfg.shell.notify_on_switch = v; save(); }));
     row(d, 'Show the account when a routed tool starts', 'e.g. “claude → work” in other terminals.', toggle(cfg.shims.notify, (v) => { cfg.shims.notify = v; save(); }));
+    if (cfg.history) row(d, 'Share conversation history with new accounts', 'Off: each new account’s Claude Code / Codex conversations stay its own, so work and personal never mix. On: new accounts also see your existing conversations. Change one account from its ⋯ menu.', toggle(cfg.history.share_new_accounts, (v) => { cfg.history.share_new_accounts = v; save(); }));
   }
 
   function accounts(body) {

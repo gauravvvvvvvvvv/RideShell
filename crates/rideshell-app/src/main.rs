@@ -8,6 +8,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod envpath;
 mod exeicon;
 mod explorer;
 mod media;
@@ -38,6 +39,10 @@ pub enum UserEvent {
     Tools(bool, serde_json::Value),
     /// Spotify's now playing (or null), sent only when it changes.
     Media(serde_json::Value),
+    /// A folder listing for the Files panel, read off the UI thread.
+    Dir(serde_json::Value),
+    /// Result of creating an account (a message for the UI).
+    Created(serde_json::Value),
     Picked(Option<PathBuf>),
     Dropped(Vec<PathBuf>),
     PtyData(u32, Vec<u8>),
@@ -293,6 +298,14 @@ fn main() {
                 }
                 send(&webview, json!({ "t": "state", "state": v }));
             }
+            Event::UserEvent(UserEvent::Dir(v)) => send(&webview, v),
+            Event::UserEvent(UserEvent::Created(v)) => {
+                let ok = v["t"] == "created";
+                send(&webview, v);
+                if ok {
+                    refresher.request();
+                }
+            }
             Event::UserEvent(UserEvent::Media(now)) => {
                 send(&webview, json!({ "t": "media", "now": now }));
             }
@@ -382,13 +395,17 @@ fn main() {
                         }
                     }
                     Msg::CreateProfile { name, description } => {
-                        match state::create_profile(&paths, cli.as_deref(), name.trim(), description.as_deref().unwrap_or("").trim()) {
-                            Ok(()) => {
-                                send(&webview, json!({ "t": "created", "name": name.trim() }));
-                                refresher.request();
-                            }
-                            Err(e) => send(&webview, json!({ "t": "toast", "kind": "error", "text": format!("{e:#}") })),
-                        }
+                        let (p, paths2, cli2) = (proxy.clone(), paths.clone(), cli.clone());
+                        // Opens the database and looks tools up on PATH: off the UI thread.
+                        std::thread::spawn(move || {
+                            let name = name.trim().to_string();
+                            let desc = description.unwrap_or_default();
+                            let v = match state::create_profile(&paths2, cli2.as_deref(), &name, desc.trim()) {
+                                Ok(private) => json!({ "t": "created", "name": name, "privateHistory": private }),
+                                Err(e) => json!({ "t": "toast", "kind": "error", "text": format!("{e:#}") }),
+                            };
+                            let _ = p.send_event(UserEvent::Created(v));
+                        });
                     }
                     Msg::SetDefault { name } => {
                         if let Err(e) = state::set_default(&paths, &name) {
@@ -468,17 +485,25 @@ fn main() {
                             let _ = p.send_event(UserEvent::Picked(dialog.pick_folder()));
                         });
                     }
-                    Msg::ListDir { path } => match state::list_dir(std::path::Path::new(&path)) {
-                        Ok((path, parent, entries)) => {
-                            send(&webview, json!({ "t": "dir", "path": path, "parent": parent, "entries": entries }))
-                        }
-                        Err(e) => send(&webview, json!({ "t": "dir", "path": path, "error": format!("{e}") })),
-                    },
+                    Msg::ListDir { path } => {
+                        let p = proxy.clone();
+                        // Network drives and big folders can be slow: off the UI thread.
+                        std::thread::spawn(move || {
+                            let v = match state::list_dir(std::path::Path::new(&path)) {
+                                Ok((path, parent, entries)) => {
+                                    json!({ "t": "dir", "path": path, "parent": parent, "entries": entries })
+                                }
+                                Err(e) => json!({ "t": "dir", "path": path, "error": format!("{e}") }),
+                            };
+                            let _ = p.send_event(UserEvent::Dir(v));
+                        });
+                    }
                     Msg::Tools { all } => {
                         let p = proxy.clone();
                         let shims = paths.shims_dir();
                         // Scanning every PATH folder takes a moment: off the UI thread.
                         std::thread::spawn(move || {
+                            envpath::refresh();
                             let tools = rideshell_core::tools::scan(Some(&shims), all);
                             let _ = p.send_event(UserEvent::Tools(all, serde_json::to_value(tools).unwrap_or_default()));
                         });
@@ -522,6 +547,8 @@ fn main() {
 /// the one-time startup request. Touches the disk and registry: never call it
 /// on the UI thread.
 fn full_state(paths: &Paths, cli_found: bool) -> serde_json::Value {
+    // Tools installed since the app started (winget, setups) show up live.
+    envpath::refresh();
     let mut v = serde_json::to_value(state::load(paths, cli_found)).unwrap_or_default();
     v["config"] = rideshell_core::config::Config::load(paths)
         .ok()

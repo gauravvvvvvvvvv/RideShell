@@ -187,14 +187,13 @@ pub fn inspect(ctx: &Ctx, tool: &str, json: bool) -> Result<i32> {
         let text = if v.is_empty() { ui::dim("none found in its help") } else { v.join(", ") };
         anstream::println!("  {label:<16} {text}");
     };
-    show("sign-in", &d.sign_in);
     show("API key vars", &d.key_vars);
     show("config vars", &d.config_vars);
     if !d.help_found {
         ui::hint("the tool printed no help; enter its details yourself");
     }
     ui::hint(format!(
-        "connect: {} identity set <profile> custom tool={tool} [\"login=<args>\"] [folder_var=VAR] [key_vars=VAR,...]",
+        "connect: {} identity set <profile> custom tool={tool} [folder_var=VAR] [key_vars=VAR,...]",
         brand::BIN_NAME
     ));
     Ok(0)

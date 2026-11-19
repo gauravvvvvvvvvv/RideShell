@@ -146,14 +146,29 @@ fn share(ctx: &Ctx, tool: &str, profile: &str) -> Result<i32> {
     Ok(0)
 }
 
-/// A newly connected Claude Code / Codex account shares conversation history
-/// with the tool's original folder by default, so `claude --resume` keeps
-/// listing the conversations you already had. Its sign-in stays its own;
-/// `history separate` undoes it. Best effort: never fails the connect.
+/// A newly connected Claude Code / Codex account keeps its conversations to
+/// itself unless `[history] share_new_accounts` is on. Either way it says how
+/// to change that for this account. Best effort: never fails the connect.
 pub fn share_by_default(ctx: &Ctx, store: &Store, p: &Profile, tool: &str) {
     let Some(spec) = history::spec(tool) else { return };
     let Ok((dir, Some(orig))) = folders(ctx, store, p, tool) else { return };
     if !orig.is_dir() || same(&dir, &orig) || history::is_shared(&spec, &dir) {
+        return;
+    }
+    let bin = rideshell_core::brand::BIN_NAME;
+    if !ctx.config().map(|c| c.history.share_new_accounts).unwrap_or(false) {
+        let n = history::conversation_count(&spec, &orig);
+        ui::hint(format!(
+            "{}'s {tool} conversations are private to it. To see your existing ones ({n} in {}): `{bin} history share {tool} --profile {}`",
+            p.name,
+            orig.display(),
+            p.name
+        ));
+        // Once per command, not once per tool.
+        static TIP: std::sync::Once = std::sync::Once::new();
+        TIP.call_once(|| ui::hint(format!(
+            "to share for every new account: set `share_new_accounts = true` under [history] in the file `{bin} config path` shows, or turn it on in the app's Settings"
+        )));
         return;
     }
     match history::share(&spec, &dir, &orig) {

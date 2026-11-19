@@ -28,7 +28,7 @@ Status legend: ✅ done · 🧪 implemented, not yet tested on that platform · 
 * ✅ Claude Code accounts (`CLAUDE_CONFIG_DIR`). Verified on Windows: separate login state, parallel sessions
 * ✅ Codex CLI accounts (`CODEX_HOME`). Verified on Windows: separate login state
 * ✅ GitHub CLI accounts (`GH_CONFIG_DIR`, documented). 🧪 gh not installed on the test machine
-* ✅ `auth login/logout/status` running each tool's own sign-in per account
+* ✅ Each tool's own sign-in, saved per account (run the tool as that account; no RideShell sign-in screens)
 * ✅ Secrets in the OS credential store (Windows Credential Manager tested; Keychain and Secret
   Service 🧪), per profile and per project directory, injected only into launched tools
 * ✅ Project (directory) variables, layered over profile variables

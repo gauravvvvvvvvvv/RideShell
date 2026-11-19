@@ -89,7 +89,12 @@ fn create(ctx: &Ctx, name: &str, description: &str, from: Option<&str>, make_def
                 let _ = super::shim::add_quiet(ctx, tool);
             }
         }
-        ui::hint(format!("sign in: {} auth login claude --profile {}", brand::BIN_NAME, profile.name));
+        let store = ctx.store()?;
+        for tool in attached.iter().filter(|t| matches!(**t, "claude" | "codex")) {
+            super::history::share_by_default(ctx, &store, &profile, tool);
+        }
+        drop(store);
+        ui::hint(format!("sign in: open a tab as {} and run `claude` (it signs in by itself)", profile.name));
     }
     ui::hint(format!(
         "add a Git identity: {} identity set {} git name=\"...\" email=...",

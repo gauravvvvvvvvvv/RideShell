@@ -72,9 +72,6 @@ pub enum Command {
     /// Variables attached to a project directory (apply to everything below it)
     #[command(subcommand)]
     Project(ProjectCommand),
-    /// Sign in to, sign out of, or check a tool account for a profile
-    #[command(subcommand)]
-    Auth(AuthCommand),
     /// Manage tool shims: `claude`, `codex`, `gh`... routed through RideShell in every terminal
     #[command(subcommand)]
     Shim(ShimCommand),
@@ -87,7 +84,7 @@ pub enum Command {
         #[arg(short, long)]
         profile: Option<String>,
     },
-    /// Show what a tool's own CLI offers: its sign-in command and the variables its help mentions
+    /// Show the variables a tool's own help mentions (API keys, config folder)
     Inspect {
         tool: String,
         #[arg(long)]
@@ -209,34 +206,6 @@ pub enum ProjectEnvCommand {
 }
 
 #[derive(Subcommand)]
-pub enum AuthCommand {
-    /// Start the tool's own sign-in for a profile's account, e.g. `auth login claude --profile work`
-    Login {
-        provider: String,
-        #[arg(short, long)]
-        profile: Option<String>,
-        /// Where the sign-in page opens: your normal browser (default) or a private window
-        #[arg(long, value_enum, default_value_t = BrowserArg::Default)]
-        browser: BrowserArg,
-        /// Pre-fill this e-mail on the sign-in page (Claude Code)
-        #[arg(long)]
-        email: Option<String>,
-    },
-    /// Sign the profile's account out of the tool
-    Logout {
-        provider: String,
-        #[arg(short, long)]
-        profile: Option<String>,
-    },
-    /// Show the tool's own sign-in status for each profile (or one profile)
-    Status {
-        provider: Option<String>,
-        #[arg(short, long)]
-        profile: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
 pub enum HistoryCommand {
     /// Where each account's conversations live
     Status,
@@ -275,14 +244,6 @@ pub enum ShimCommand {
     List,
     /// Re-create all shims (after updating RideShell)
     Refresh,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
-pub enum BrowserArg {
-    /// Your default browser, as it is (signed-in accounts, saved passwords)
-    Default,
-    /// A private window of your default browser (no existing sign-ins)
-    Private,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]

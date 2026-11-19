@@ -17,17 +17,6 @@ fn main() {
         std::process::exit(commands::shim::run_shim(&invoked_as, args.collect()));
     }
 
-    // Started as the BROWSER of a login that asked for a private window.
-    {
-        let rest: Vec<String> = std::env::args().skip(1).collect();
-        if rest.len() == 1
-            && std::env::var_os(commands::browser::PRIVATE_ENV).is_some()
-            && (rest[0].starts_with("https://") || rest[0].starts_with("http://"))
-        {
-            std::process::exit(commands::browser::open_private(&rest[0]));
-        }
-    }
-
     // Double-clicked in Explorer (or started from the Start menu): the
     // installed copy opens a RideShell window; any other copy installs itself.
     #[cfg(windows)]

@@ -385,19 +385,8 @@ body.light .avatar, body.light .primary { color: #fff; }
 
 #tabs::-webkit-scrollbar { display: none; }
 
-/* ----- sign-in guide ----- */
-#signin .modal-box { width: min(500px, 92vw); }
-.si-tips { margin: 0 0 16px; padding-left: 18px; color: var(--text-2); font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
-.si-tips b, #si-text b { color: var(--text); font-weight: 600; }
+/* ----- modal labels ----- */
 .modal-box label .opt { color: var(--text-3); font-weight: 400; margin-left: 4px; }
-.si-label { color: var(--text-2); font-size: 12px; font-weight: 550; margin: 4px 0 6px; }
-.si-choice { display: flex; flex-direction: column; gap: 6px; }
-.si-opt { display: flex !important; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: 0 !important; border-radius: 10px; border: 1px solid var(--line-2); cursor: pointer; }
-.si-opt:has(input:checked) { border-color: var(--violet); background: color-mix(in srgb, var(--violet) 10%, transparent); }
-.si-opt input { display: inline !important; width: auto !important; margin: 3px 0 0 !important; accent-color: var(--violet); }
-.si-opt span { display: flex; flex-direction: column; gap: 2px; }
-.si-opt b { color: var(--text); font-weight: 600; font-size: 13px; }
-.si-opt small { color: var(--text-3); font-size: 11.5px; font-weight: 400; }
 
 /* ----- collapsible sidebar sections ----- */
 .sec { display: flex; flex-direction: column; }

@@ -1,9 +1,9 @@
 //! Any tool, connected to an account by what the tool itself offers.
 //!
 //! RideShell keeps no list of tools. A tool is connected as `custom-<tool>`
-//! with whatever its own CLI provides (see [`crate::discover`]): its sign-in
-//! command (`login`), a variable for its config folder or file (each account
-//! gets its own location), and the variables that hold its API keys. The
+//! with whatever its own CLI provides (see [`crate::discover`]): a variable
+//! for its config folder or file (each account gets its own location), and
+//! the variables that hold its API keys. Signing in is the tool's own job. The
 //! folder and file variables reach only that tool, never other programs.
 
 use std::collections::BTreeMap;
@@ -44,18 +44,13 @@ const CUSTOM_SETTINGS: &[SettingSpec] = &[
         description: "Config file name inside the account folder (with file_var; default: config)",
     },
     SettingSpec { key: "config_dir", description: "Use an existing folder instead of a RideShell-managed one" },
-    SettingSpec { key: "login", description: "The tool's sign-in arguments, e.g. `login` or `auth login`" },
     SettingSpec {
         key: "key_vars",
         description: "Variables that hold its API keys, comma-separated, e.g. VERCEL_TOKEN",
     },
 ];
 
-/// Sign-in arguments and API-key variables of a custom tool.
-pub fn custom_login(settings: &Settings) -> Option<Vec<String>> {
-    settings.get("login").map(|l| l.split_whitespace().map(str::to_string).collect())
-}
-
+/// API-key variables of a custom tool.
 pub fn custom_key_vars(settings: &Settings) -> Vec<String> {
     settings
         .get("key_vars")
@@ -127,9 +122,6 @@ impl Provider for CustomProvider {
                 out.push(Diagnostic::error(format!("key_vars: {e}")));
             }
         }
-        if settings.get("login").is_some_and(|l| l.contains(['&', '|', ';', '<', '>'])) {
-            out.push(Diagnostic::error("login: only the tool's arguments, e.g. `auth login`"));
-        }
         if settings.contains_key("file") && !settings.contains_key("file_var") {
             out.push(Diagnostic::error("'file' needs 'file_var'"));
         }
@@ -191,21 +183,17 @@ mod tests {
         let s: Settings = [
             ("tool".into(), "vercel".into()),
             ("folder_var".into(), "VERCEL_HOME".into()),
-            ("login".into(), "login".into()),
             ("key_vars".into(), "VERCEL_TOKEN, OTHER_KEY".into()),
         ]
         .into();
         assert!(CUSTOM.validate(&s).is_empty(), "{:?}", CUSTOM.validate(&s));
         let env = CUSTOM.environment(&s, &ctx("work")).unwrap();
         assert_eq!(PathBuf::from(&env["VERCEL_HOME"]), Path::new("/data/accounts/custom-vercel/work"));
-        assert_eq!(custom_login(&s), Some(vec!["login".to_string()]));
         assert_eq!(custom_key_vars(&s), vec!["VERCEL_TOKEN", "OTHER_KEY"]);
         assert!(CUSTOM.tool_scoped(), "a tool's own variables never reach other programs");
         let bad: Settings = [("tool".into(), "a b".into())].into();
         assert!(!CUSTOM.validate(&bad).is_empty());
         assert!(!CUSTOM.validate(&Settings::new()).is_empty(), "tool is required");
-        let bad_login: Settings = [("tool".into(), "x".into()), ("login".into(), "login & del".into())].into();
-        assert!(!CUSTOM.validate(&bad_login).is_empty());
     }
 
     #[test]
