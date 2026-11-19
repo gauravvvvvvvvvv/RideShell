@@ -14,8 +14,9 @@ First release. Windows 11 is the tested platform.
 * `auth login/logout/status` with a sign-in guide, `--email` and an optional `--browser private`
 * Tool shims: `claude`, `codex`, `gh` and any `shim add <tool>` use the right account in every terminal
 
-* Tool catalogue: 22 tools, each with its own sign-in folder or its own API key per account, plus
-  "any other tool" (name the command and its variables)
+* Connect any installed tool to an account. RideShell reads the tool's own help to pre-fill
+  its sign-in command and the variables it mentions (`rideshell inspect <tool>`), and you
+  confirm them. A tool's config-folder variable reaches only that tool.
 * Claude Code / Codex conversation history per account: adopt the original folder, or share
   history while keeping a separate sign-in (`rideshell history`)
 

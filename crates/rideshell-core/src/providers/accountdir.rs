@@ -39,6 +39,8 @@ pub struct AccountDirProvider {
     pub category: &'static str,
     /// Every new profile gets its own account automatically.
     pub auto_attach: bool,
+    /// Variables reach only this tool (see [`Provider::tool_scoped`]).
+    pub scoped: bool,
 }
 
 const SETTINGS: &[SettingSpec] = &[
@@ -68,6 +70,7 @@ pub const CLAUDE: AccountDirProvider = AccountDirProvider {
     isolation: "separate config directory per account (CLAUDE_CONFIG_DIR): login, settings, history and MCP config are per account",
     category: "AI coding agents",
     auto_attach: true,
+    scoped: false,
 };
 
 pub const CODEX: AccountDirProvider = AccountDirProvider {
@@ -82,6 +85,7 @@ pub const CODEX: AccountDirProvider = AccountDirProvider {
     isolation: "separate CODEX_HOME per account: auth.json, config and history are per account",
     category: "AI coding agents",
     auto_attach: true,
+    scoped: false,
 };
 
 pub const GH: AccountDirProvider = AccountDirProvider {
@@ -96,6 +100,7 @@ pub const GH: AccountDirProvider = AccountDirProvider {
     isolation: "separate GH_CONFIG_DIR per account (gh may keep the token itself in the OS credential store, keyed by host and user)",
     category: "Code hosting",
     auto_attach: true,
+    scoped: false,
 };
 
 impl AccountDirProvider {
@@ -138,6 +143,9 @@ impl Provider for AccountDirProvider {
     }
     fn auto_attach(&self) -> bool {
         self.auto_attach
+    }
+    fn tool_scoped(&self) -> bool {
+        self.scoped
     }
     fn tool(&self) -> &'static str {
         self.tool

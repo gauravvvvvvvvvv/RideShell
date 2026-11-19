@@ -114,6 +114,18 @@ pub fn open_with_default(target: &str) -> Result<()> {
     Ok(())
 }
 
+/// Never show a window for a helper process RideShell starts in the
+/// background (Windows would open a console for console programs started
+/// from the windowed app).
+pub fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

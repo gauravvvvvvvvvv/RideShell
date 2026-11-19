@@ -807,3 +807,52 @@ fn every_new_profile_gets_its_own_tool_accounts() {
     }
     assert!(!show.contains("config_dir"), "a later profile never adopts existing logins: {show}");
 }
+
+#[cfg(windows)]
+#[test]
+fn tool_scoped_variables_reach_only_that_tool() {
+    let e = Env::new();
+    e.ok(&["profile", "create", "work"]);
+    e.ok(&["identity", "set", "work", "custom", "tool=stripe", "folder_var=XDG_CONFIG_HOME"]);
+    // A stand-in `stripe` that prints what it receives.
+    let bin = e.dir("fakebin");
+    std::fs::write(
+        bin.join("stripe.cmd"),
+        "@echo XDG=%XDG_CONFIG_HOME%
+",
+    )
+    .unwrap();
+    let path = format!("{};{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let run = |cmd: &[&str]| {
+        let out = e.cmd().env("PATH", &path).args(["run", "--profile", "work", "--"]).args(cmd).output().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        stdout(&out)
+    };
+    let stripe = run(&["stripe"]);
+    assert!(stripe.replace('\\', "/").contains("accounts/custom-stripe/work"), "stripe gets its own folder: {stripe}");
+    let other = run(&["cmd", "/c", "echo", "XDG=%XDG_CONFIG_HOME%"]);
+    assert!(!other.contains("accounts"), "other programs do not: {other}");
+}
+
+#[cfg(windows)]
+#[test]
+fn connect_reads_the_tools_own_help_and_never_signs_in_by_itself() {
+    let e = Env::new();
+    e.ok(&["profile", "create", "work"]);
+    let bin = e.dir("fakebin");
+    let marker = e.work.path().join("login-ran.txt");
+    // A tool whose --help lists a login command and an API-key variable;
+    // running `faketool login` would leave a marker file.
+    let script = format!(
+        "@echo off\r\nif \"%1\"==\"login\" (echo ran> \"{}\" & exit /b 0)\r\necho Usage: faketool ^<command^>\r\necho.\r\necho Commands:\r\necho   deploy   Deploy things\r\necho   login    Sign in\r\necho.\r\necho Environment: FAKETOOL_API_TOKEN overrides the stored login.\r\n",
+        marker.display()
+    );
+    std::fs::write(bin.join("faketool.cmd"), script).unwrap();
+    let path = format!("{};{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let out = e.cmd().env("PATH", &path).args(["connect", "faketool", "--profile", "work"]).output().unwrap();
+    assert!(out.status.success(), "{}{}", stdout(&out), stderr(&out));
+    let show = e.ok(&["identity", "show", "work"]);
+    assert!(show.contains("login = login"), "sign-in command taken from the tool's help: {show}");
+    assert!(show.contains("key_vars = FAKETOOL_API_TOKEN"), "key variable taken from the tool's help: {show}");
+    assert!(!marker.exists(), "connect must never run the tool's sign-in without an explicit yes");
+}

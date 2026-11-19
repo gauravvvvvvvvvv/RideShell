@@ -3,6 +3,7 @@
 //   POST /v1/ping   {"id":"<32 hex>","v":"0.1.0","os":"windows","m":5}
 //   GET  /v1/stats  Authorization: Bearer <STATS_TOKEN>   (owner dashboard data)
 //   GET  /          owner dashboard (asks for the token, keeps it in the browser)
+//   GET  /v1/public, /badge/live.svg, /badge/today.svg   public totals only (README badge)
 //
 // Privacy: the app sends a random id that changes every UTC day, its version,
 // the OS family and active minutes. Nothing else exists to be sent. This
@@ -24,6 +25,16 @@ export default {
         return cors(await ping(request, env));
       }
       if (url.pathname === '/v1/stats' && request.method === 'GET') return await stats(request, env);
+      // Public aggregates only (no ids, versions or anything per user): for the README badge.
+      if (url.pathname === '/v1/public' && request.method === 'GET') return cors(json(await publicCounts(env), 200, 60));
+      if (url.pathname === '/badge/live.svg' && request.method === 'GET') {
+        const c = await publicCounts(env);
+        return badge('live users', String(c.live), '#16a34a');
+      }
+      if (url.pathname === '/badge/today.svg' && request.method === 'GET') {
+        const c = await publicCounts(env);
+        return badge('users today', String(c.today), '#7c4ddb');
+      }
       if (url.pathname === '/' && request.method === 'GET') {
         return new Response(DASHBOARD, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
       }
@@ -57,6 +68,29 @@ async function ping(request, env) {
        last_seen = excluded.last_seen, version = excluded.version`,
   ).bind(day, id, version, os, minutes, now).run();
   return new Response(null, { status: 204 });
+}
+
+async function publicCounts(env) {
+  const now = Math.floor(Date.now() / 1000);
+  const today = new Date(now * 1000).toISOString().slice(0, 10);
+  const [live, day] = await env.DB.batch([
+    env.DB.prepare('SELECT COUNT(*) AS n FROM pings WHERE last_seen > ?1').bind(now - LIVE_WINDOW),
+    env.DB.prepare('SELECT COUNT(*) AS n FROM pings WHERE day = ?1').bind(today),
+  ]);
+  return { live: live.results[0].n, today: day.results[0].n };
+}
+
+// A small shields-style SVG badge. Text is generated here, never from input.
+function badge(label, value, color) {
+  const w = (t) => Math.round(t.length * 6.6 + 12);
+  const lw = w(label), vw = w(value);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${lw + vw}" height="20" role="img" aria-label="${label}: ${value}">
+<linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+<clipPath id="r"><rect width="${lw + vw}" height="20" rx="3" fill="#fff"/></clipPath>
+<g clip-path="url(#r)"><rect width="${lw}" height="20" fill="#555"/><rect x="${lw}" width="${vw}" height="20" fill="${color}"/><rect width="${lw + vw}" height="20" fill="url(#s)"/></g>
+<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+<text x="${lw / 2}" y="14">${label}</text><text x="${lw + vw / 2}" y="14">${value}</text></g></svg>`;
+  return new Response(svg, { headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=60' } });
 }
 
 async function stats(request, env) {
@@ -93,14 +127,15 @@ async function tokenMatches(header, secret) {
   return crypto.subtle.timingSafeEqual(a, b) && given.length > 0;
 }
 
-function json(value, status = 200) {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+function json(value, status = 200, maxAge = 0) {
+  const cache = maxAge ? `public, max-age=${maxAge}` : 'no-store';
+  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': cache } });
 }
 
 function cors(response) {
   const r = new Response(response.body, response);
   r.headers.set('access-control-allow-origin', '*');
-  r.headers.set('access-control-allow-methods', 'POST, OPTIONS');
+  r.headers.set('access-control-allow-methods', 'GET, POST, OPTIONS');
   r.headers.set('access-control-allow-headers', 'content-type');
   return r;
 }

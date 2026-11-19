@@ -1,5 +1,6 @@
 pub mod browser;
 mod config;
+mod connect;
 mod doctor;
 mod history;
 mod hook;
@@ -87,6 +88,8 @@ pub fn dispatch(command: Option<Command>) -> Result<i32> {
         Command::Profile(cmd) => profile::run(&ctx, cmd),
         Command::Identity(cmd) => identity::run(&ctx, cmd),
         Command::Providers => identity::providers(),
+        Command::Connect { tool, profile } => connect::run(&ctx, tool, profile),
+        Command::Inspect { tool, json } => shim::inspect(&ctx, &tool, json),
         Command::Tools { filter, all, json } => shim::tools(&ctx, filter.as_deref(), all, json),
         Command::Secret(cmd) => secret::run(&ctx, cmd),
         Command::History(cmd) => history::run(&ctx, cmd),

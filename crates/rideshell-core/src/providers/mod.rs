@@ -102,6 +102,11 @@ pub trait Provider: Send + Sync {
     fn auto_attach(&self) -> bool {
         false
     }
+    /// The variables only reach the tool itself (launched through its shim,
+    /// `run` or `auth`), never other programs: e.g. `XDG_CONFIG_HOME`.
+    fn tool_scoped(&self) -> bool {
+        false
+    }
     fn settings(&self) -> &'static [SettingSpec];
     fn secrets(&self) -> &'static [SecretSpec] {
         &[]
@@ -187,35 +192,9 @@ pub fn attach_default_accounts(store: &mut crate::store::Store, profile: &str) -
 }
 
 pub fn registry() -> &'static [&'static dyn Provider] {
-    static REGISTRY: [&dyn Provider; 24] = [
-        // Account folders (each account signs in on its own)
-        &CLAUDE,
-        &CODEX,
-        &catalog::GEMINI,
-        &GH,
-        &catalog::GLAB,
-        &Git,
-        &catalog::AWS,
-        &catalog::AZURE,
-        &catalog::GCLOUD,
-        &catalog::KUBECTL,
-        &catalog::DOCKER,
-        &catalog::NPM,
-        &catalog::HUGGINGFACE,
-        // API tokens (one token per account)
-        &catalog::WRANGLER,
-        &catalog::NETLIFY,
-        &catalog::SUPABASE,
-        &catalog::HEROKU,
-        &catalog::RAILWAY,
-        &catalog::FLY,
-        &catalog::DOCTL,
-        &catalog::STRIPE,
-        &catalog::NGROK,
-        &catalog::FIREBASE,
-        // Anything else
-        &catalog::CUSTOM,
-    ];
+    // Built in: the accounts RideShell is about. Every other tool is connected
+    // through `custom`, with what its own CLI offers (see `discover`).
+    static REGISTRY: [&dyn Provider; 5] = [&CLAUDE, &CODEX, &GH, &Git, &catalog::CUSTOM];
     &REGISTRY
 }
 
@@ -230,9 +209,6 @@ pub fn find(id: &str) -> Option<&'static dyn Provider> {
 pub fn for_tool(tool: &str) -> Option<&'static dyn Provider> {
     registry().iter().copied().find(|p| p.tool().eq_ignore_ascii_case(tool))
 }
-
-/// Providers on the roadmap, listed so users get an honest answer.
-pub const PLANNED: &[&str] = &["ssh", "vercel"];
 
 /// Keys in `settings` not known to `provider`.
 pub fn unknown_keys(provider: &dyn Provider, settings: &Settings) -> Vec<String> {
@@ -260,9 +236,9 @@ pub fn absolute_path(value: &str) -> String {
 /// (RideShell's own launchers) are skipped so the real tool is reported.
 pub fn detect_binary(name: &str, version_args: &[&str]) -> Detection {
     let Some(path) = crate::shims::find_real(name, None).ok() else { return Detection::default() };
-    let version = Command::new(&path)
-        .args(version_args)
-        .env(crate::shims::BYPASS_ENV, "1")
+    let mut cmd = Command::new(&path);
+    cmd.args(version_args).env(crate::shims::BYPASS_ENV, "1");
+    let version = crate::platform::no_window(&mut cmd)
         .output()
         .ok()
         .filter(|o| o.status.success())

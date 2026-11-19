@@ -60,6 +60,9 @@ pub fn layered_env(
                     .push(format!("profile '{}' uses unknown provider '{provider_id}' (ignored)", profile.name));
                 continue;
             };
+            if provider.tool_scoped() {
+                continue; // applied only when that tool runs: see `tool_scoped_env`
+            }
             match provider.environment(&settings, &ctx) {
                 Ok(env) => {
                     for (k, v) in env {
@@ -126,6 +129,30 @@ pub fn materialize(env: &LayeredEnv, vault: Option<&dyn Vault>) -> (BTreeMap<Str
         }
     }
     (vars, warnings)
+}
+
+/// Variables of `profile`'s tool-scoped identities for `tool` (for example
+/// `XDG_CONFIG_HOME` for the Stripe CLI), and the folders they need. Applied
+/// only when that tool itself is launched, never to other programs.
+pub fn tool_scoped_env(
+    store: &Store,
+    accounts_dir: &Path,
+    profile: &Profile,
+    tool: &str,
+) -> Result<(std::collections::BTreeMap<String, String>, Vec<std::path::PathBuf>)> {
+    let ctx = ProviderContext { profile: &profile.name, accounts_dir };
+    let mut env = std::collections::BTreeMap::new();
+    let mut dirs = Vec::new();
+    for (provider_id, settings) in store.identities(profile.id)? {
+        let Some(provider) = providers::find(&provider_id) else { continue };
+        // Custom tools name their command in their settings.
+        let command = settings.get("tool").map(String::as_str).unwrap_or(provider.tool());
+        if provider.tool_scoped() && command.eq_ignore_ascii_case(tool) {
+            env.extend(provider.environment(&settings, &ctx)?);
+            dirs.extend(provider.required_dirs(&settings, &ctx));
+        }
+    }
+    Ok((env, dirs))
 }
 
 #[cfg(test)]

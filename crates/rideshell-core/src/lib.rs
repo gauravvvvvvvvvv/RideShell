@@ -8,6 +8,7 @@
 pub mod brand;
 pub mod config;
 pub mod dialect;
+pub mod discover;
 pub mod environment;
 pub mod envstate;
 pub mod exec;

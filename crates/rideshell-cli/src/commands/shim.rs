@@ -118,7 +118,8 @@ fn run_shim_inner(tool: &str, args: Vec<OsString>) -> Result<i32> {
 
     // Fails closed: if this terminal selected a profile that no longer
     // exists, `prepare` errors instead of using some other account.
-    let prepared = run::prepare(&ctx, &store, None, None, true)?;
+    let mut prepared = run::prepare(&ctx, &store, None, None, true)?;
+    run::add_tool_scoped(&ctx, &store, &mut prepared, tool)?;
     drop(store);
 
     let config = ctx.config().unwrap_or_default();
@@ -161,6 +162,32 @@ pub fn tools(ctx: &Ctx, filter: Option<&str>, all: bool, json: bool) -> Result<i
         list.len(),
         if all { "" } else { ", Windows' own commands hidden (--all)" },
         brand::APP_NAME,
+        brand::BIN_NAME
+    ));
+    Ok(0)
+}
+
+/// `rideshell inspect <tool>`: what the tool's own help offers.
+pub fn inspect(ctx: &Ctx, tool: &str, json: bool) -> Result<i32> {
+    let exe = shims::find_real(tool, Some(&ctx.paths.shims_dir()))?;
+    let d = rideshell_core::discover::inspect(&exe);
+    if json {
+        println!("{}", serde_json::to_string(&d)?);
+        return Ok(0);
+    }
+    anstream::println!("{} {}", ui::accent(tool), ui::dim(exe.display().to_string()));
+    let show = |label: &str, v: &[String]| {
+        let text = if v.is_empty() { ui::dim("none found in its help") } else { v.join(", ") };
+        anstream::println!("  {label:<16} {text}");
+    };
+    show("sign-in", &d.sign_in);
+    show("API key vars", &d.key_vars);
+    show("config vars", &d.config_vars);
+    if !d.help_found {
+        ui::hint("the tool printed no help; enter its details yourself");
+    }
+    ui::hint(format!(
+        "connect: {} identity set <profile> custom tool={tool} [\"login=<args>\"] [folder_var=VAR] [key_vars=VAR,...]",
         brand::BIN_NAME
     ));
     Ok(0)

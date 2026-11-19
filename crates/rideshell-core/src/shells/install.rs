@@ -43,10 +43,9 @@ fn powershell_profile(shell: Shell) -> Result<PathBuf> {
     let exe = which::which(shell.executable()).with_context(|| {
         format!("{} ({}) is not installed or not on PATH", shell.display_name(), shell.executable())
     })?;
-    let out = Command::new(exe)
-        .args(["-NoProfile", "-NonInteractive", "-Command", "$PROFILE.CurrentUserAllHosts"])
-        .output()
-        .context("failed to ask PowerShell for its profile path")?;
+    let mut cmd = Command::new(exe);
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", "$PROFILE.CurrentUserAllHosts"]);
+    let out = crate::platform::no_window(&mut cmd).output().context("failed to ask PowerShell for its profile path")?;
     let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if !out.status.success() || path.is_empty() {
         bail!("PowerShell did not report a profile path");

@@ -80,6 +80,19 @@ pub enum Command {
     Shim(ShimCommand),
     /// List identity adapters and whether their tools are installed
     Providers,
+    /// Connect a tool to a profile (asks a few questions; reads the tool's own help for suggestions)
+    Connect {
+        /// The tool's command, e.g. vercel (asked if omitted)
+        tool: Option<String>,
+        #[arg(short, long)]
+        profile: Option<String>,
+    },
+    /// Show what a tool's own CLI offers: its sign-in command and the variables its help mentions
+    Inspect {
+        tool: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// List the command-line tools installed on this PC (everything on PATH), and where each came from
     Tools {
         /// Only names containing this text

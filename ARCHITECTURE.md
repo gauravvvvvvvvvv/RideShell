@@ -243,18 +243,22 @@ login).
 are separated per config directory has not been verified, so multi-account Claude Code on
 macOS is unverified until then. API-key accounts (`ANTHROPIC_API_KEY` secret) are unaffected.
 
-### The catalogue (`providers/catalog.rs`)
+### Any other tool (`providers/catalog.rs`, `discover.rs`)
 
-* **Account folders** (`AccountDirProvider`) set one or more variables to the account's
-  folder or to a file inside it. Examples: `CLAUDE_CONFIG_DIR`, `AZURE_CONFIG_DIR`,
-  `CLOUDSDK_CONFIG`, `DOCKER_CONFIG`, `GLAB_CONFIG_DIR`, `HF_HOME`, and
-  `AWS_CONFIG_FILE` + `AWS_SHARED_CREDENTIALS_FILE`, `KUBECONFIG`, `NPM_CONFIG_USERCONFIG`.
-* **API tokens** (`TokenProvider`) contribute no variables of their own. The token is a
-  profile secret, prompted for by `identity set`, and is injected like any other secret.
-* **Custom** (`CustomProvider`) is stored as identity `custom-<tool>` with
-  `tool`/`folder_var`/`file_var`/`file`.
-* `auto_attach` marks the tools every new profile gets automatically (Claude Code, Codex,
-  GitHub CLI).
+* **No tool list.** Built-in providers exist only for Claude Code, Codex, GitHub CLI and Git.
+* Every other tool is a `custom-<tool>` identity with:
+  * `tool`;
+  * `login` (sign-in arguments);
+  * `folder_var` / `file_var` (each account gets `<accounts>/custom-<tool>/<profile>`);
+  * `key_vars` (profile secrets).
+* Custom variables are **tool-scoped**. `layered_env` skips them, and `run::add_tool_scoped`
+  adds them only when that tool is launched (through its shim, `run` or `auth`).
+* `discover::inspect` runs the tool's `--help` (plus `auth --help` / `help environment` when
+  mentioned):
+  * with no stdin, no window, a 5 s limit, 256 KB of output, and `CI=1`, `NO_COLOR=1`;
+  * it collects sign-in subcommands and UPPER_CASE variables, sorted into key-like and
+    config-like.
+  * These are suggestions, and the user confirms them.
 
 ### Conversation history (`history.rs`)
 
@@ -437,8 +441,7 @@ window; any other copy runs the installer.
   only). It is disabled by `DO_NOT_TRACK` / `RIDESHELL_NO_TELEMETRY` (checked by the host) or
   by the Settings toggle. `POST /v1/ping {id, v, os, m}` is sent every 5 minutes with
   `credentials: 'omit'` and `referrerPolicy: 'no-referrer'`. `id` comes from
-  `crypto.getRandomValues`, 128 bits, regenerated on every new UTC day. A notice appears on
-  first start. The server (`server/src/index.js`) keeps one row per `(day, id)`. "Live" means
+  `crypto.getRandomValues`, 128 bits, regenerated on every new UTC day. It runs as a background request: no window and no message. The server (`server/src/index.js`) keeps one row per `(day, id)`. "Live" means
   `last_seen` within the last 10 minutes.
 * **Message slot:** compiled in only with `RIDESHELL_PROMO_URL`. `GET` returns
   `{text, url, until}` every 6 hours, fetched without an ID. The text is set with

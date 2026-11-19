@@ -4,6 +4,15 @@
 
 <h1 align="center">RideShell</h1>
 
+<!-- Live user count (anonymous totals from server/). After deploying the Worker, replace
+     YOUR-WORKER with its address (e.g. rideshell-telemetry.you.workers.dev) and remove these
+     comment markers:
+<p align="center">
+  <img src="https://YOUR-WORKER/badge/live.svg" alt="live users">
+  <img src="https://YOUR-WORKER/badge/today.svg" alt="users today">
+</p>
+-->
+
 <p align="center">
   <b>One terminal. Every shell. Every account.</b><br>
   PowerShell, cmd and bash in one window · separate Claude Code, Codex, GitHub and Git accounts side by side ·
@@ -78,7 +87,7 @@ rideshell run --profile personal -- claude  # one command, one account
 | **Files:** favorites, places, project folders and a browser that follows the tab | **Settings:** themes like Windows Terminal, fonts, sidebar, shell, privacy |
 
 * **Accounts sidebar:** one click switches the current tab's account, and **+** opens a new tab as
-  it. Each account lists its tools with **Sign in** and **Status**. The sign-in guide
+  it. Each account lists its tools with **Sign in** and **API key**, and a ⋯ menu. The sign-in guide
   explains how to use a different account in your browser, can pre-fill the e-mail, and offers
   a private window if *you* choose it.
 * **Launch:** Claude Code, Codex, GitHub CLI, Git, Git Bash, Command Prompt, PowerShell 7,
@@ -130,23 +139,26 @@ Each line is checked when you press Enter:
 
 ## Connect any tool
 
-Each account can connect **any** command-line tool. Every tool is kept separate the way that
-tool itself supports:
+RideShell has no list of supported tools. **Connect a tool** shows the command-line tools
+installed on your PC. When you pick one, RideShell reads that tool's own `--help` and
+pre-fills what it finds:
 
-| How | Tools |
-|---|---|
-| **Own sign-in** (a separate config folder or file per account) | Claude Code, Codex, GitHub CLI, GitLab CLI, AWS CLI, Azure CLI, Google Cloud CLI, kubectl, Docker, npm, Hugging Face |
-| **Own API key** (stored in the OS credential store) | Gemini CLI, Cloudflare Wrangler, Netlify, Supabase, Heroku, Railway, Fly.io, DigitalOcean, Stripe CLI, ngrok, Firebase |
-| **Name & e-mail** | Git (commit identity and SSH key) |
-| **Any other tool** | You name the command and the variable it reads for its config folder and/or API key |
+* its **sign-in command** (`login`, `auth login`…);
+* the **variables** it mentions for API keys or a config folder.
 
-In RideShell App use **Connect a tool** under an account. Each connected tool has a **⋯** menu
-with Sign in, Status, API key, conversation history and Disconnect. From the command line:
+You confirm or edit them, or leave them empty. Afterwards the tool has **Sign in** and/or
+**API key** buttons for that account.
+
+* **Keys** are stored in the OS credential store and given to the tool when that account runs it.
+* **A config-folder variable** gives the account its own folder for that tool. It reaches only
+  that tool, never other programs.
+* **Built in** are only the accounts RideShell is about: Claude Code, Codex and GitHub CLI
+  (their own config folders, plus conversation history) and Git (commit identity).
 
 ```powershell
-rideshell identity set work aws                                  # own AWS config + credentials
-rideshell identity set work wrangler                             # asks for the Cloudflare API token
-rideshell identity set work custom tool=vercel folder_var=VERCEL_HOME
+rideshell inspect vercel                       # what vercel's own help offers
+rideshell identity set work custom tool=vercel "login=login" key_vars=VERCEL_TOKEN
+rideshell auth login custom-vercel --profile work
 ```
 
 ## Your Claude Code and Codex conversations

@@ -1,263 +1,18 @@
-//! The tool catalogue: every account a profile can connect.
+//! Any tool, connected to an account by what the tool itself offers.
 //!
-//! Each entry uses the mechanism the tool itself documents for choosing an
-//! account per process:
-//!
-//! * **Account folder** ([`AccountDirProvider`]): the tool keeps its login in a
-//!   folder or file chosen by an environment variable. Each RideShell account
-//!   gets its own, and signs in once with the tool's own login command.
-//! * **API token** ([`TokenProvider`]): the tool reads a token from an
-//!   environment variable. Each account stores its own token in the OS
-//!   credential store; it is passed only to programs RideShell launches.
-//! * **Any other tool** ([`CustomProvider`]): the user names the tool and the
-//!   variable that selects its config folder or file.
-//!
-//! Tools whose documentation offers neither are not listed: RideShell does not
-//! copy or move a tool's login files behind its back.
+//! RideShell keeps no list of tools. A tool is connected as `custom-<tool>`
+//! with whatever its own CLI provides (see [`crate::discover`]): its sign-in
+//! command (`login`), a variable for its config folder or file (each account
+//! gets its own location), and the variables that hold its API keys. The
+//! folder and file variables reach only that tool, never other programs.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
 
-use super::{absolute_path, AccountDirProvider, Diagnostic, Provider, ProviderContext, SecretSpec, SettingSpec};
+use super::{absolute_path, Diagnostic, Provider, ProviderContext, SettingSpec};
 use crate::store::Settings;
-
-// ----- account folders -----------------------------------------------------------
-
-pub const GLAB: AccountDirProvider = AccountDirProvider {
-    id: "glab",
-    display_name: "GitLab CLI",
-    tool: "glab",
-    vars: &[("GLAB_CONFIG_DIR", "")],
-    secrets: &[SecretSpec {
-        key: "token",
-        env: "GITLAB_TOKEN",
-        description: "GitLab token (instead of glab auth login)",
-    }],
-    login: Some(&["auth", "login"]),
-    logout: Some(&["auth", "logout"]),
-    status: Some(&["auth", "status"]),
-    isolation: "separate GLAB_CONFIG_DIR per account",
-    category: "Code hosting",
-    auto_attach: false,
-};
-
-pub const AWS: AccountDirProvider = AccountDirProvider {
-    id: "aws",
-    display_name: "AWS CLI",
-    tool: "aws",
-    vars: &[("AWS_CONFIG_FILE", "config"), ("AWS_SHARED_CREDENTIALS_FILE", "credentials")],
-    secrets: &[],
-    login: Some(&["configure"]),
-    logout: None,
-    status: Some(&["sts", "get-caller-identity"]),
-    isolation:
-        "separate AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE per account (SSO token cache stays in ~/.aws/sso)",
-    category: "Cloud",
-    auto_attach: false,
-};
-
-pub const AZURE: AccountDirProvider = AccountDirProvider {
-    id: "az",
-    display_name: "Azure CLI",
-    tool: "az",
-    vars: &[("AZURE_CONFIG_DIR", "")],
-    secrets: &[],
-    login: Some(&["login"]),
-    logout: Some(&["logout"]),
-    status: Some(&["account", "show"]),
-    isolation: "separate AZURE_CONFIG_DIR per account: login and subscriptions are per account",
-    category: "Cloud",
-    auto_attach: false,
-};
-
-pub const GCLOUD: AccountDirProvider = AccountDirProvider {
-    id: "gcloud",
-    display_name: "Google Cloud CLI",
-    tool: "gcloud",
-    vars: &[("CLOUDSDK_CONFIG", "")],
-    secrets: &[],
-    login: Some(&["auth", "login"]),
-    logout: Some(&["auth", "revoke"]),
-    status: Some(&["auth", "list"]),
-    isolation: "separate CLOUDSDK_CONFIG per account: credentials and configurations are per account",
-    category: "Cloud",
-    auto_attach: false,
-};
-
-pub const KUBECTL: AccountDirProvider = AccountDirProvider {
-    id: "kubectl",
-    display_name: "Kubernetes (kubectl)",
-    tool: "kubectl",
-    vars: &[("KUBECONFIG", "config")],
-    secrets: &[],
-    login: None,
-    logout: None,
-    status: Some(&["config", "current-context"]),
-    isolation: "separate KUBECONFIG per account (contexts, clusters and users)",
-    category: "Containers",
-    auto_attach: false,
-};
-
-pub const DOCKER: AccountDirProvider = AccountDirProvider {
-    id: "docker",
-    display_name: "Docker CLI",
-    tool: "docker",
-    vars: &[("DOCKER_CONFIG", "")],
-    secrets: &[],
-    login: Some(&["login"]),
-    logout: Some(&["logout"]),
-    status: None,
-    isolation:
-        "separate DOCKER_CONFIG per account (a credential helper set in config.json may still use the shared OS store)",
-    category: "Containers",
-    auto_attach: false,
-};
-
-pub const NPM: AccountDirProvider = AccountDirProvider {
-    id: "npm",
-    display_name: "npm registry",
-    tool: "npm",
-    vars: &[("NPM_CONFIG_USERCONFIG", ".npmrc")],
-    secrets: &[],
-    login: Some(&["login"]),
-    logout: Some(&["logout"]),
-    status: Some(&["whoami"]),
-    isolation: "separate user .npmrc per account (registry logins and settings)",
-    category: "Packages",
-    auto_attach: false,
-};
-
-pub const HUGGINGFACE: AccountDirProvider = AccountDirProvider {
-    id: "huggingface",
-    display_name: "Hugging Face",
-    tool: "hf",
-    vars: &[("HF_HOME", "")],
-    secrets: &[SecretSpec { key: "token", env: "HF_TOKEN", description: "Hugging Face access token" }],
-    login: None,
-    logout: None,
-    status: None,
-    isolation: "separate HF_HOME per account (token and cache); or an HF_TOKEN per account",
-    category: "AI",
-    auto_attach: false,
-};
-
-// ----- API tokens -----------------------------------------------------------
-
-/// A tool that takes its account from an API token in an environment variable.
-pub struct TokenProvider {
-    pub id: &'static str,
-    pub display_name: &'static str,
-    pub tool: &'static str,
-    pub secrets: &'static [SecretSpec],
-    pub category: &'static str,
-    pub status: Option<&'static [&'static str]>,
-}
-
-macro_rules! token {
-    ($name:ident, $id:literal, $display:literal, $tool:literal, $env:literal, $what:literal, $cat:literal, $status:expr) => {
-        pub const $name: TokenProvider = TokenProvider {
-            id: $id,
-            display_name: $display,
-            tool: $tool,
-            secrets: &[SecretSpec { key: "token", env: $env, description: $what }],
-            category: $cat,
-            status: $status,
-        };
-    };
-}
-
-token!(GEMINI, "gemini", "Gemini CLI", "gemini", "GEMINI_API_KEY", "Gemini API key", "AI coding agents", None);
-token!(
-    WRANGLER,
-    "wrangler",
-    "Cloudflare (Wrangler)",
-    "wrangler",
-    "CLOUDFLARE_API_TOKEN",
-    "Cloudflare API token",
-    "Deploy",
-    Some(&["whoami"])
-);
-token!(
-    NETLIFY,
-    "netlify",
-    "Netlify CLI",
-    "netlify",
-    "NETLIFY_AUTH_TOKEN",
-    "Netlify personal access token",
-    "Deploy",
-    Some(&["status"])
-);
-token!(
-    SUPABASE,
-    "supabase",
-    "Supabase CLI",
-    "supabase",
-    "SUPABASE_ACCESS_TOKEN",
-    "Supabase access token",
-    "Deploy",
-    Some(&["projects", "list"])
-);
-token!(HEROKU, "heroku", "Heroku CLI", "heroku", "HEROKU_API_KEY", "Heroku API key", "Deploy", Some(&["auth:whoami"]));
-token!(RAILWAY, "railway", "Railway CLI", "railway", "RAILWAY_TOKEN", "Railway token", "Deploy", Some(&["whoami"]));
-token!(FLY, "fly", "Fly.io (flyctl)", "fly", "FLY_API_TOKEN", "Fly.io API token", "Deploy", Some(&["auth", "whoami"]));
-token!(
-    DOCTL,
-    "doctl",
-    "DigitalOcean (doctl)",
-    "doctl",
-    "DIGITALOCEAN_ACCESS_TOKEN",
-    "DigitalOcean access token",
-    "Cloud",
-    Some(&["account", "get"])
-);
-token!(STRIPE, "stripe", "Stripe CLI", "stripe", "STRIPE_API_KEY", "Stripe secret key", "Payments", None);
-token!(NGROK, "ngrok", "ngrok", "ngrok", "NGROK_AUTHTOKEN", "ngrok authtoken", "Networking", None);
-token!(FIREBASE, "firebase", "Firebase CLI", "firebase", "FIREBASE_TOKEN", "Firebase CI token", "Deploy", None);
-
-impl Provider for TokenProvider {
-    fn id(&self) -> &'static str {
-        self.id
-    }
-    fn display_name(&self) -> &'static str {
-        self.display_name
-    }
-    fn description(&self) -> &'static str {
-        "one API token per account"
-    }
-    fn tool(&self) -> &'static str {
-        self.tool
-    }
-    fn auto_shim(&self) -> bool {
-        true
-    }
-    fn isolation(&self) -> &'static str {
-        "each account keeps its own token in the OS credential store; it is passed only to programs RideShell launches"
-    }
-    fn category(&self) -> &'static str {
-        self.category
-    }
-    fn settings(&self) -> &'static [SettingSpec] {
-        &[]
-    }
-    fn secrets(&self) -> &'static [SecretSpec] {
-        self.secrets
-    }
-    fn validate(&self, _settings: &Settings) -> Vec<Diagnostic> {
-        Vec::new()
-    }
-    fn environment(&self, _settings: &Settings, _ctx: &ProviderContext) -> Result<BTreeMap<String, String>> {
-        // The token is a profile secret (`secret set <ENV> --profile p`), applied with the others.
-        Ok(BTreeMap::new())
-    }
-    fn summary(&self, _settings: &Settings, _ctx: &ProviderContext) -> String {
-        format!("API token ({})", self.secrets.iter().map(|s| s.env).collect::<Vec<_>>().join(", "))
-    }
-    fn status_args(&self) -> Option<&'static [&'static str]> {
-        self.status
-    }
-}
 
 // ----- any other tool -----------------------------------------------------------
 
@@ -289,7 +44,24 @@ const CUSTOM_SETTINGS: &[SettingSpec] = &[
         description: "Config file name inside the account folder (with file_var; default: config)",
     },
     SettingSpec { key: "config_dir", description: "Use an existing folder instead of a RideShell-managed one" },
+    SettingSpec { key: "login", description: "The tool's sign-in arguments, e.g. `login` or `auth login`" },
+    SettingSpec {
+        key: "key_vars",
+        description: "Variables that hold its API keys, comma-separated, e.g. VERCEL_TOKEN",
+    },
 ];
+
+/// Sign-in arguments and API-key variables of a custom tool.
+pub fn custom_login(settings: &Settings) -> Option<Vec<String>> {
+    settings.get("login").map(|l| l.split_whitespace().map(str::to_string).collect())
+}
+
+pub fn custom_key_vars(settings: &Settings) -> Vec<String> {
+    settings
+        .get("key_vars")
+        .map(|v| v.split(',').map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).collect())
+        .unwrap_or_default()
+}
 
 impl CustomProvider {
     fn dir(settings: &Settings, ctx: &ProviderContext) -> PathBuf {
@@ -317,7 +89,10 @@ impl Provider for CustomProvider {
         ""
     }
     fn isolation(&self) -> &'static str {
-        "the folder or file variable you name points to a separate location per account"
+        "the folder or file variable you name points to a separate location per account, for this tool only"
+    }
+    fn tool_scoped(&self) -> bool {
+        true
     }
     fn settings(&self) -> &'static [SettingSpec] {
         CUSTOM_SETTINGS
@@ -346,6 +121,14 @@ impl Provider for CustomProvider {
                     out.push(Diagnostic::error(format!("{k}: {e}")));
                 }
             }
+        }
+        for k in custom_key_vars(settings) {
+            if let Err(e) = crate::names::validate_env_key(&k) {
+                out.push(Diagnostic::error(format!("key_vars: {e}")));
+            }
+        }
+        if settings.get("login").is_some_and(|l| l.contains(['&', '|', ';', '<', '>'])) {
+            out.push(Diagnostic::error("login: only the tool's arguments, e.g. `auth login`"));
         }
         if settings.contains_key("file") && !settings.contains_key("file_var") {
             out.push(Diagnostic::error("'file' needs 'file_var'"));
@@ -386,7 +169,7 @@ impl Provider for CustomProvider {
             parts.push(format!("{v} → {}", settings.get("file").map(String::as_str).unwrap_or("config")));
         }
         if parts.is_empty() {
-            format!("{tool} (routed through RideShell; add keys with `secret set`)")
+            format!("{tool} (sign-in and keys as set up)")
         } else {
             format!("{tool}: {}", parts.join(", "))
         }
@@ -403,37 +186,30 @@ mod tests {
     }
 
     #[test]
-    fn file_variables_point_into_the_account_folder() {
-        let env = AWS.environment(&Settings::new(), &ctx("work")).unwrap();
-        assert_eq!(PathBuf::from(&env["AWS_CONFIG_FILE"]), Path::new("/data/accounts/aws/work/config"));
-        assert_eq!(
-            PathBuf::from(&env["AWS_SHARED_CREDENTIALS_FILE"]),
-            Path::new("/data/accounts/aws/work/credentials")
-        );
-        let env = KUBECTL.environment(&Settings::new(), &ctx("personal")).unwrap();
-        assert_eq!(PathBuf::from(&env["KUBECONFIG"]), Path::new("/data/accounts/kubectl/personal/config"));
-    }
-
-    #[test]
-    fn token_providers_set_nothing_themselves() {
-        assert!(WRANGLER.environment(&Settings::new(), &ctx("work")).unwrap().is_empty());
-        assert_eq!(WRANGLER.secrets()[0].env, "CLOUDFLARE_API_TOKEN");
-    }
-
-    #[test]
     fn custom_tools() {
         assert!(is_custom_id("custom-vercel") && !is_custom_id("custom") && !is_custom_id("claude"));
-        let s: Settings = [("tool".into(), "vercel".into()), ("folder_var".into(), "VERCEL_HOME".into())].into();
-        assert!(CUSTOM.validate(&s).is_empty());
+        let s: Settings = [
+            ("tool".into(), "vercel".into()),
+            ("folder_var".into(), "VERCEL_HOME".into()),
+            ("login".into(), "login".into()),
+            ("key_vars".into(), "VERCEL_TOKEN, OTHER_KEY".into()),
+        ]
+        .into();
+        assert!(CUSTOM.validate(&s).is_empty(), "{:?}", CUSTOM.validate(&s));
         let env = CUSTOM.environment(&s, &ctx("work")).unwrap();
         assert_eq!(PathBuf::from(&env["VERCEL_HOME"]), Path::new("/data/accounts/custom-vercel/work"));
+        assert_eq!(custom_login(&s), Some(vec!["login".to_string()]));
+        assert_eq!(custom_key_vars(&s), vec!["VERCEL_TOKEN", "OTHER_KEY"]);
+        assert!(CUSTOM.tool_scoped(), "a tool's own variables never reach other programs");
         let bad: Settings = [("tool".into(), "a b".into())].into();
         assert!(!CUSTOM.validate(&bad).is_empty());
         assert!(!CUSTOM.validate(&Settings::new()).is_empty(), "tool is required");
+        let bad_login: Settings = [("tool".into(), "x".into()), ("login".into(), "login & del".into())].into();
+        assert!(!CUSTOM.validate(&bad_login).is_empty());
     }
 
     #[test]
-    fn every_catalogue_id_is_unique() {
+    fn every_registry_id_is_unique() {
         let ids: Vec<_> = super::super::registry().iter().map(|p| p.id()).collect();
         let mut sorted = ids.clone();
         sorted.sort();

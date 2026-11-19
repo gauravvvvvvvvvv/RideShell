@@ -57,14 +57,31 @@ pub fn prepare(
     Ok(Prepared { resolution, layered, plan })
 }
 
+/// Add the variables that only `tool` itself receives (e.g. XDG_CONFIG_HOME
+/// for the Stripe CLI) and create their folders.
+pub fn add_tool_scoped(ctx: &Ctx, store: &Store, prepared: &mut Prepared, tool: &str) -> Result<()> {
+    let Some(profile) = &prepared.resolution.profile else { return Ok(()) };
+    let tool = std::path::Path::new(tool).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let (env, dirs) = environment::tool_scoped_env(store, &ctx.paths.accounts_dir(), profile, &tool)?;
+    for d in dirs {
+        let _ = std::fs::create_dir_all(d);
+    }
+    for (k, v) in env {
+        prepared.plan.set.retain(|(name, _)| !name.eq_ignore_ascii_case(&k));
+        prepared.plan.set.push((k, v));
+    }
+    Ok(())
+}
+
 pub fn run(ctx: &Ctx, args: RunArgs) -> Result<i32> {
     let dir = match &args.dir {
         Some(d) => Some(dunce::canonicalize(d).map_err(|e| anyhow::anyhow!("cannot open {}: {e}", d.display()))?),
         None => None,
     };
     let store = ctx.store()?;
-    let prepared = prepare(ctx, &store, args.profile.as_deref(), dir.as_deref(), true)?;
+    let mut prepared = prepare(ctx, &store, args.profile.as_deref(), dir.as_deref(), true)?;
     let (program, rest) = args.command.split_first().expect("clap requires a command");
+    add_tool_scoped(ctx, &store, &mut prepared, program)?;
     if prepared.resolution.profile.is_none() {
         ui::warn("no profile selected; running with the current environment (minus any applied profile)");
     }

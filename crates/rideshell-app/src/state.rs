@@ -29,12 +29,17 @@ pub struct ToolAccount {
     pub name: String,
     /// The command (for its icon and launching).
     pub tool: String,
-    /// "account" (own config folder), "token" (API key) or "custom".
+    /// "account", "token", "identity" or "custom" (how RideShell set it up).
     pub kind: &'static str,
+    /// The tool has a sign-in command (`rideshell auth login <id>` runs it).
     pub login: bool,
     pub status: bool,
-    /// Secret keys this tool takes (e.g. "token", "api_key").
-    pub keys: Vec<&'static str>,
+    /// API-key variables this tool reads (e.g. CLOUDFLARE_API_TOKEN).
+    #[serde(rename = "keyVars")]
+    pub key_vars: Vec<String>,
+    /// PowerShell line that asks for those keys.
+    #[serde(rename = "keyCmd")]
+    pub key_cmd: Option<String>,
     pub summary: String,
     /// Conversation history (Claude Code, Codex): "original", "shared" or "own".
     pub history: Option<&'static str>,
@@ -62,8 +67,11 @@ pub struct ProviderView {
     pub name: &'static str,
     pub tool: &'static str,
     pub category: &'static str,
-    pub kind: &'static str,
-    pub isolation: &'static str,
+    /// The tool has a sign-in command.
+    pub signin: bool,
+    /// API-key variables it reads.
+    #[serde(rename = "keyVars")]
+    pub key_vars: Vec<&'static str>,
     pub installed: bool,
     /// Executable path, for the tool's own icon.
     pub icon: Option<String>,
@@ -264,16 +272,8 @@ pub fn load(paths: &Paths, cli_found: bool) -> StateView {
                     name: p.display_name(),
                     tool: p.tool(),
                     category: p.category(),
-                    kind: if p.id() == "custom" {
-                        "custom"
-                    } else if p.id() == "git" {
-                        "identity"
-                    } else if p.settings().is_empty() {
-                        "token"
-                    } else {
-                        "account"
-                    },
-                    isolation: p.isolation(),
+                    signin: p.login_args().is_some(),
+                    key_vars: p.secrets().iter().map(|s| s.env).collect(),
                     installed: exe.is_some(),
                     icon: exe.map(|e| e.to_string_lossy().into_owned()),
                 }
@@ -331,9 +331,27 @@ fn load_profiles(paths: &Paths) -> Result<Vec<ProfileView>> {
                 } else {
                     "account"
                 },
-                login: prov.login_args().is_some(),
+                login: if custom { settings.contains_key("login") } else { prov.login_args().is_some() },
                 status: prov.status_args().is_some(),
-                keys: prov.secrets().iter().map(|s| s.key).collect(),
+                key_vars: if custom {
+                    providers::catalog::custom_key_vars(&settings)
+                } else {
+                    prov.secrets().iter().map(|s| s.env.to_string()).collect()
+                },
+                key_cmd: if custom {
+                    let vars = providers::catalog::custom_key_vars(&settings);
+                    (!vars.is_empty()).then(|| {
+                        vars.iter()
+                            .map(|v| format!("rideshell secret set {v} --profile {}", p.name))
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    })
+                } else if prov.secrets().is_empty() {
+                    None
+                } else {
+                    let keys: Vec<&str> = prov.secrets().iter().map(|s| s.key).collect();
+                    Some(format!("rideshell identity set {} {id} {}", p.name, keys.join(" ")))
+                },
                 summary: prov.summary(&settings, &ctx),
                 history,
                 conversations,

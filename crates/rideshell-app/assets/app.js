@@ -266,12 +266,13 @@
           const r = el('div', 'tool-row', `${toolIcon(t, 'tiny')}<span class="t-name" title="${esc(t.summary)}">${esc(t.name)}</span>${badge}`);
           if (t.login) {
             const login = el('button', '', 'Sign in');
-            login.title = `Sign ${p.name} in to ${t.name}`;
+            login.title = `Run ${t.tool}'s own sign-in for ${p.name}`;
             login.onclick = () => signIn(p.name, t.id, t.name);
             r.appendChild(login);
-          } else if (t.keys.length) {
-            const key = el('button', '', 'Key');
-            key.title = `Set ${p.name}'s ${t.name} key`;
+          }
+          if (t.keyCmd) {
+            const key = el('button', '', 'API key');
+            key.title = `Set ${t.keyVars.join(', ')} for ${p.name}`;
             key.onclick = () => changeKey(p, t);
             r.appendChild(key);
           }
@@ -291,8 +292,9 @@
   }
 
   function changeKey(p, t) {
-    const keys = t.keys.join(' ');
-    runInNewTab(`rideshell identity set ${p.name} ${t.id} ${keys}`, { profile: p.name, title: `Key · ${t.name}`, icon: 'key' });
+    if (!t.keyCmd) return;
+    runInNewTab(t.keyCmd, { profile: p.name, title: `API key · ${t.name}`, icon: 'key' });
+    setTimeout(() => post({ t: 'state' }), 4000);
   }
 
   // The per-tool menu: everything about one tool account lives here.
@@ -300,7 +302,7 @@
     const items = [];
     if (t.login) items.push({ html: toolIcon(t, 'tiny'), label: `Sign in to ${t.name}`, run: () => signIn(p.name, t.id, t.name) });
     if (t.status) items.push({ icon: 'pulse', label: 'Check sign-in status', run: () => runInNewTab(`rideshell auth status ${t.id} --profile ${p.name}`, { profile: p.name, title: `Status · ${t.name}`, icon: 'pulse' }) });
-    if (t.keys.length) items.push({ icon: 'key', label: t.kind === 'token' ? 'Change API key' : 'Set an API key instead of signing in', run: () => changeKey(p, t) });
+    if (t.keyCmd) items.push({ icon: 'key', label: `API key (${t.keyVars.join(', ')})`, run: () => changeKey(p, t) });
     if (t.history) {
       items.push('-');
       const n = t.conversations ?? 0;
@@ -313,7 +315,7 @@
     }
     items.push('-');
     items.push({ icon: 'close', label: `Disconnect ${t.name}`, run: () => {
-      if (confirm(`Disconnect ${t.name} from ${p.name}? Its sign-in folder and keys are kept on disk.`)) {
+      if (confirm(`Disconnect ${t.name} from ${p.name}?`)) {
         runInNewTab(`rideshell identity unset ${p.name} ${t.id}`, { profile: p.name, title: `Disconnect · ${t.name}`, icon: 'close' });
       }
     } });
@@ -334,74 +336,11 @@
 
   // ----- connect a tool -------------------------------------------------------------
 
-  let connecting = null;
+  // Connecting is a plain terminal command: it asks a few questions there.
   function openConnect(p) {
-    connecting = p;
-    $('#connect-title').textContent = `Connect a tool to ${p.name}`;
-    $('#connect-input').value = '';
-    $('#connect-custom').hidden = true;
-    $('#connect-list').hidden = false;
-    $('#connect').hidden = false;
-    renderConnect();
-    setTimeout(() => $('#connect-input').focus(), 20);
+    runInNewTab(`rideshell connect --profile ${p.name}`, { profile: p.name, title: 'Connect a tool', icon: 'plus' });
+    setTimeout(() => post({ t: 'state' }), 8000);
   }
-  function closeConnect() { $('#connect').hidden = true; connecting = null; activeTab()?.term.focus(); }
-
-  function renderConnect() {
-    const p = connecting;
-    if (!p) return;
-    const q = $('#connect-input').value.trim().toLowerCase();
-    const have = new Set(p.tools.map((t) => t.id));
-    const list = $('#connect-list');
-    list.innerHTML = '';
-    const all = (RS.state?.providers || []).filter((pr) => pr.id !== 'custom' && !have.has(pr.id));
-    const match = (pr) => !q || pr.name.toLowerCase().includes(q) || pr.tool.toLowerCase().includes(q) || pr.category.toLowerCase().includes(q);
-    const groups = new Map();
-    for (const pr of all.filter(match).sort((a, b) => (b.installed - a.installed) || a.name.localeCompare(b.name))) {
-      const g = pr.installed ? 'Installed on this PC' : pr.category;
-      if (!groups.has(g)) groups.set(g, []);
-      groups.get(g).push(pr);
-    }
-    const order = ['Installed on this PC', ...[...groups.keys()].filter((g) => g !== 'Installed on this PC').sort()];
-    for (const g of order) {
-      if (!groups.has(g)) continue;
-      list.appendChild(el('div', 'p-group', esc(g)));
-      for (const pr of groups.get(g)) {
-        const how = { token: 'API key', identity: 'name & e-mail', account: 'own sign-in' }[pr.kind] || '';
-        const it = el('div', 'c-item', `${exeIcon(pr.icon, pr.tool, 'small')}<span class="c-name">${esc(pr.name)}<small>${esc(pr.category)}</small></span><span class="c-how">${how}</span>`);
-        it.title = pr.isolation;
-        it.onclick = () => {
-          closeConnect();
-          runInNewTab(`rideshell identity set ${p.name} ${pr.id}`, { profile: p.name, title: `Connect · ${pr.name}`, icon: 'key' });
-          setTimeout(() => post({ t: 'state' }), 3000);
-        };
-        list.appendChild(it);
-      }
-    }
-    const other = el('div', 'c-item other', `<span class="aicon small plain">${I('plus')}</span><span class="c-name">Any other tool…<small>name it, and the setting it reads</small></span>`);
-    other.onclick = () => { $('#connect-list').hidden = true; $('#connect-custom').hidden = false; $('#cc-tool').value = q; setTimeout(() => $('#cc-tool').focus(), 20); };
-    list.appendChild(other);
-  }
-
-  $('#connect-input').addEventListener('input', renderConnect);
-  $('#connect-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeConnect(); });
-  $('#connect').addEventListener('mousedown', (e) => { if (e.target.id === 'connect') closeConnect(); });
-  $('#connect-close').onclick = closeConnect;
-  $('#cc-back').onclick = () => { $('#connect-custom').hidden = true; $('#connect-list').hidden = false; };
-  $('#connect-custom').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const p = connecting;
-    const tool = $('#cc-tool').value.trim();
-    const folder = $('#cc-folder').value.trim();
-    const key = $('#cc-key').value.trim();
-    if (!p || !tool) return;
-    let cmd = `rideshell identity set ${p.name} custom tool=${tool}`;
-    if (folder) cmd += ` folder_var=${folder}`;
-    if (key) cmd += `; rideshell secret set ${key} --profile ${p.name}`;
-    closeConnect();
-    runInNewTab(cmd, { profile: p.name, title: `Connect · ${tool}`, icon: 'key' });
-    setTimeout(() => post({ t: 'state' }), 3000);
-  });
 
   // ----- sign-in guide -------------------------------------------------------------
 
@@ -409,9 +348,8 @@
   function signIn(profile, tool, displayName) {
     signing = { profile, tool };
     const name = displayName || toolName(tool);
-    const others = (RS.state?.profiles || []).filter((p) => p.name !== profile && p.tools.some((t) => t.id === tool)).map((p) => p.name);
     $('#si-title').textContent = `Sign ${profile} in to ${name}`;
-    $('#si-text').innerHTML = `The login is saved for <b>${esc(profile)}</b> only${others.length ? `; ${others.map((o) => `<b>${esc(o)}</b>`).join(', ')} keep${others.length === 1 ? 's' : ''} ${others.length === 1 ? 'its' : 'their'} own` : ''}.`;
+    $('#si-text').innerHTML = `Runs ${esc(name)}'s own sign-in for <b>${esc(profile)}</b>.`;
     const tips = [
       `If your browser is already signed in to ${name} with another account, use <b>switch account</b> or <b>sign out</b> on the page that opens, then sign in with the account you want.`,
       'The sign-in link is also shown in the terminal: you can paste it into another browser or browser profile.',
@@ -940,9 +878,9 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('.xterm')) return;
-    if (e.key === 'Escape') { hideMenu(); if (!$('#signin').hidden) { $('#signin').hidden = true; signing = null; } if (!$('#connect').hidden) closeConnect(); if (!$('#modal').hidden) { $('#modal').hidden = true; } if (!$('#tools').hidden) closeTools(); }
+    if (e.key === 'Escape') { hideMenu(); if (!$('#signin').hidden) { $('#signin').hidden = true; signing = null; } if (!$('#modal').hidden) { $('#modal').hidden = true; } if (!$('#tools').hidden) closeTools(); }
     const act = shortcut(e);
-    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden && $('#signin').hidden && $('#connect').hidden) { e.preventDefault(); act(); }
+    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden && $('#signin').hidden ) { e.preventDefault(); act(); }
   });
 
   function zoom(step) {
@@ -1002,8 +940,6 @@
   $('#admin-btn').onclick = openAdmin;
   $('#settings-btn .i').innerHTML = I('gear');
   $('#settings-btn').onclick = () => SET().open();
-  $('#connect-close').innerHTML = I('close');
-  $('#connect .palette-input .i').innerHTML = I('search');
   $('#all-tools-btn .i').innerHTML = I('terminal');
   $('#all-tools-btn').onclick = openTools;
   $('#tools-close').innerHTML = I('close');

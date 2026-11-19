@@ -37,7 +37,7 @@ pub fn pctx<'a>(ctx: &'a Ctx, profile: &'a Profile, accounts: &'a std::path::Pat
     ProviderContext { profile: &profile.name, accounts_dir: accounts }
 }
 
-fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<i32> {
+pub fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<i32> {
     let provider = provider_or_explain(provider_id)?;
     // "Any other tool" is stored per tool: custom-<tool>.
     let identity_id = if provider.id() == "custom" {
@@ -59,14 +59,7 @@ fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<
     if provider.id() == "custom" && !settings.contains_key("tool") {
         settings.insert("tool".into(), identity_id[7..].to_string());
     }
-    // A token tool with nothing given: ask for its token now (or again, to change it).
-    let asked: Vec<String> = if pairs.is_empty() && provider.settings().is_empty() {
-        provider.secrets().iter().map(|s| s.key.to_string()).collect()
-    } else {
-        Vec::new()
-    };
-    let pairs: Vec<String> = pairs.iter().cloned().chain(asked).collect();
-    let pairs = &pairs[..];
+
     let mut secrets: Vec<(&'static str, String)> = Vec::new();
 
     for pair in pairs {
@@ -110,10 +103,11 @@ fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<
     }
     store.set_identity(&p.name, &identity_id, &settings)?;
     let accounts = ctx.paths.accounts_dir();
+    let label = settings.get("tool").cloned().unwrap_or_else(|| provider.display_name().to_string());
     ui::success(format!(
-        "{} {}: {}",
+        "{} connected {}: {}",
         ui::accent(&p.name),
-        provider.display_name(),
+        label,
         provider.summary(&settings, &pctx(ctx, &p, &accounts))
     ));
     drop(store);
@@ -128,8 +122,18 @@ fn set(ctx: &Ctx, profile: &str, provider_id: &str, pairs: &[String]) -> Result<
         shim::add(ctx, tool)?;
         shim::path_hint(ctx);
     }
-    if provider.login_args().is_some() {
-        ui::hint(format!("sign in once: {} auth login {} --profile {}", brand::BIN_NAME, provider.id(), p.name));
+    if provider.login_args().is_some() || settings.contains_key("login") {
+        ui::hint(format!("sign in: {} auth login {} --profile {}", brand::BIN_NAME, identity_id, p.name));
+    }
+    if !provider.secrets().is_empty() {
+        let keys: Vec<&str> = provider.secrets().iter().map(|s| s.key).collect();
+        ui::hint(format!(
+            "or set an API key: {} identity set {} {} {}",
+            brand::BIN_NAME,
+            p.name,
+            identity_id,
+            keys.join(" ")
+        ));
     }
     Ok(0)
 }
@@ -244,7 +248,7 @@ fn pick_profile(ctx: &Ctx, store: &Store, name: Option<&str>) -> Result<Profile>
     }
 }
 
-fn login_logout(
+pub fn login_logout(
     ctx: &Ctx,
     provider_id: &str,
     profile: Option<&str>,
@@ -253,11 +257,30 @@ fn login_logout(
     email: Option<&str>,
 ) -> Result<i32> {
     let provider = provider_or_explain(provider_id)?;
-    let args = if login { provider.login_args() } else { provider.logout_args() }
-        .with_context(|| format!("{} has no sign-in flow to run", provider.display_name()))?;
     let mut store = ctx.store()?;
     let p = pick_profile(ctx, &store, profile)?;
-    if !store.identities(p.id)?.contains_key(provider.id()) {
+    // Custom tools keep their own sign-in arguments.
+    let custom_settings = if providers::catalog::is_custom_id(provider_id) {
+        Some(store.identities(p.id)?.remove(provider_id).with_context(|| format!("{} has no {provider_id}", p.name))?)
+    } else {
+        None
+    };
+    let args: Vec<String> = match &custom_settings {
+        Some(s) if login => providers::catalog::custom_login(s).with_context(|| {
+            format!("no sign-in command saved for {provider_id} (identity set ... login=\"auth login\")")
+        })?,
+        Some(_) => bail!("custom tools have no saved sign-out command; run the tool's own"),
+        None => if login { provider.login_args() } else { provider.logout_args() }
+            .with_context(|| format!("{} has no sign-in command", provider.display_name()))?
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    };
+    let tool_name: String = match &custom_settings {
+        Some(s) => s.get("tool").cloned().unwrap_or_default(),
+        None => provider.tool().to_string(),
+    };
+    if custom_settings.is_none() && !store.identities(p.id)?.contains_key(provider.id()) {
         // First use: give this profile its own account with defaults.
         store.set_identity(&p.name, provider.id(), &Default::default())?;
         ui::success(format!("{} now has its own {} account", ui::accent(&p.name), provider.display_name()));
@@ -266,10 +289,11 @@ fn login_logout(
         }
     }
     let mut prepared = run::prepare(ctx, &store, Some(&p.name), None, true)?;
+    run::add_tool_scoped(ctx, &store, &mut prepared, &tool_name)?;
     let others: Vec<String> = store.list_profiles()?.into_iter().filter(|o| o.id != p.id).map(|o| o.name).collect();
     drop(store);
-    let real = shims::find_real(provider.tool(), Some(&ctx.paths.shims_dir()))?;
-    let mut args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let real = shims::find_real(&tool_name, Some(&ctx.paths.shims_dir()))?;
+    let mut args = args;
     if login {
         if let Some(e) = email {
             if provider.id() == "claude" {
@@ -285,12 +309,12 @@ fn login_logout(
             prepared.plan.set.push(("GH_BROWSER".into(), me));
             prepared.plan.set.push((super::browser::PRIVATE_ENV.into(), "1".into()));
         }
-        sign_in_help(provider.display_name(), &p.name, &others, browser);
+        sign_in_help(&tool_name, &p.name, &others, browser);
     }
     anstream::eprintln!(
         "{} {} {} for profile {}",
         ui::dim(format!("{} ▸", brand::BIN_NAME)),
-        provider.tool(),
+        tool_name,
         args.join(" "),
         ui::accent(&p.name)
     );
@@ -300,7 +324,7 @@ fn login_logout(
 /// What to expect before the tool opens its sign-in page.
 fn sign_in_help(tool: &str, profile: &str, others: &[String], browser: BrowserArg) {
     anstream::eprintln!();
-    anstream::eprintln!("  Signing {} in to {tool}. The login is stored for this profile only.", ui::accent(profile));
+    anstream::eprintln!("  Signing {} in to {tool}.", ui::accent(profile));
     match browser {
         BrowserArg::Default => {
             if !others.is_empty() {

@@ -28,7 +28,8 @@ user names or settings. The Worker stores no IP addresses and logs no headers. R
 are sent without cookies or referrer.
 
 Users turn it off in **Settings → Privacy & usage**, or with `DO_NOT_TRACK=1` /
-`RIDESHELL_NO_TELEMETRY=1`. The first time the app starts, it says that the counter exists.
+`RIDESHELL_NO_TELEMETRY=1`. The request runs in the background of the app: no window and no
+message. Settings → Privacy & usage shows exactly what is sent.
 
 ## Deploy
 
@@ -40,8 +41,13 @@ npx wrangler secret put STATS_TOKEN              # a long random string, for the
 npx wrangler deploy
 ```
 
-Open the Worker's URL to see the dashboard and enter the token. It shows live now (pings
-in the last 10 minutes), users today, average minutes, a 30-day chart, versions and OS.
+Open the Worker's URL to see the dashboard and enter the token. It shows live now (pings in the
+last 10 minutes), users today, average minutes, a 30-day chart, versions and OS.
+
+**Public badges** (totals only, nothing per user): `/badge/live.svg` (live now) and
+`/badge/today.svg` (users today), refreshed every minute. To show them under the logo in the
+project README, replace `YOUR-WORKER` in the badge lines at the top of `README.md` with your
+Worker's address, and remove the comment markers around them.
 
 ## Building with the counter
 
