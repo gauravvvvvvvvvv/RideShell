@@ -73,6 +73,8 @@
       case 'dropped': onDropped(m.items); break;
       case 'dir': onDir(m); break;
       case 'media': renderMedia(m.now); break;
+      case 'update': window.RSUpdate?.onUpdate(m); break;
+      case 'wizard': window.RSUpdate?.onWizard(m); break;
       case 'worked': RS.worked = m.folders || []; if (!$('#pane-files').hidden) renderFolderLists(); break;
       case 'paste': { const t = RS.tabs.get(m.id); if (t && !t.ended) t.term.paste(m.text); break; }
     }
@@ -95,7 +97,9 @@
     if (firstState) {
       firstState = false;
       const st = s.startup || {};
-      openTab({ profile: st.profile || null, cwd: st.dir || null });
+      window.RSUpdate?.start(s);
+      // The first-install wizard (`--setup`) opens no terminal.
+      if (!st.setup) openTab({ profile: st.profile || null, cwd: st.dir || null });
     }
   }
 
@@ -883,7 +887,7 @@
     if (e.target.closest && e.target.closest('.xterm')) return;
     if (e.key === 'Escape') { hideMenu(); if (!$('#modal').hidden) { $('#modal').hidden = true; } if (!$('#tools').hidden) closeTools(); }
     const act = shortcut(e);
-    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden) { e.preventDefault(); act(); }
+    if (act && $('#palette').hidden && $('#modal').hidden && $('#tools').hidden && $('#settings').hidden && $('#wizard').hidden) { e.preventDefault(); act(); }
   });
 
   function zoom(step) {

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 (2026-11-20)
+
+* **Updates inside the app.** RideShell App checks GitHub Releases shortly after start and every
+  6 hours, and offers a new version in a popup (Install update / Later / Skip this version). The
+  update installs in a wizard (download, SHA-256 check against the release's checksum file,
+  install with no terminal window, restart). *Settings → Updates* turns the check off or runs it
+  now.
+* **Install wizard.** Double-clicking the downloaded `rideshell.exe` opens an install window
+  instead of a console.
+* **Linux:** the `rideshell` command-line tool is published for Linux (x86-64). Profiles, folder
+  bindings, bash/zsh integration, tool shims and secrets (Secret Service). RideShell App is
+  Windows-only for now.
+
 ## 0.1.1 (2026-11-20)
 
 * Conversation history of new Claude Code / Codex accounts is **private by default** again, so

@@ -129,6 +129,7 @@
     ['shell', 'Shell & routing', 'terminal'],
     ['accounts', 'Accounts', 'user'],
     ['privacy', 'Privacy & usage', 'shield'],
+    ['updates', 'Updates', 'bolt'],
     ['advanced', 'Advanced', 'gear'],
   ];
   let section = 'appearance';
@@ -151,7 +152,7 @@
     const body = $('#settings-body');
     body.innerHTML = '';
     body.scrollTop = 0;
-    ({ appearance, terminal, sidebar, shell, accounts, privacy, advanced })[section](body);
+    ({ appearance, terminal, sidebar, shell, accounts, privacy, updates, advanced })[section](body);
   }
 
   const h = (body, title, sub) => { body.appendChild(el('h3', 'shead', esc(title))); if (sub) body.appendChild(el('p', 'muted ssub', sub)); };
@@ -320,6 +321,24 @@
   }
 
   const fmtMin = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60 ? `${m % 60} min` : ''}`.trim());
+
+  function updates(body) {
+    const U = window.RSUpdate;
+    const st = RS.state || {};
+    h(body, 'Updates', `You have RideShell ${esc(st.version || '')}. New versions come from the project's GitHub Releases, are checked against their published SHA-256 before installing, and install without a terminal window.`);
+    const c = card(body);
+    row(c, 'Check for updates automatically', 'Shortly after start and every 6 hours: one request to GitHub, with no ID or personal data. Nothing installs without your OK.', toggle(S.values.updateCheck !== false, (v) => { S.values.updateCheck = v; S.save(); }));
+    const avail = U?.available();
+    const check = el('button', avail ? 'primary small' : 'ghost small', avail ? `Install ${esc(avail.version)}…` : 'Check now');
+    check.onclick = () => { if (avail) { S.close(); U.offer(); } else { check.textContent = 'Checking…'; U?.check(true); } };
+    row(c, avail ? `RideShell ${esc(avail.version)} is available` : 'Check for a new version', avail ? 'Download, verify and install it.' : 'Asks GitHub for the latest release now.', check);
+    if (S.values.skipVersion) {
+      const un = el('button', 'ghost small', 'Show it again');
+      un.onclick = () => { delete S.values.skipVersion; S.save(); render(); };
+      row(c, `Skipped version ${esc(S.values.skipVersion)}`, 'You chose not to be reminded about this version.', un);
+    }
+  }
+  window.RSUpdateSettings = () => { if (!$('#settings').hidden && section === 'updates') render(); };
 
   function privacy(body) {
     const U = window.RSUsage;

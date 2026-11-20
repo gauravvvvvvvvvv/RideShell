@@ -14,6 +14,7 @@ mod explorer;
 mod media;
 mod pty;
 mod state;
+mod updater;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -43,6 +44,8 @@ pub enum UserEvent {
     Dir(serde_json::Value),
     /// Result of creating an account (a message for the UI).
     Created(serde_json::Value),
+    /// Update check result, or a wizard step (download, verify, install...).
+    Update(serde_json::Value),
     Picked(Option<PathBuf>),
     Dropped(Vec<PathBuf>),
     PtyData(u32, Vec<u8>),
@@ -57,6 +60,7 @@ fn asset(path: &str) -> Option<(&'static [u8], &'static str)> {
         "/app.css" => (include_bytes!("../assets/app.css"), "text/css; charset=utf-8"),
         "/app.js" => (include_bytes!("../assets/app.js"), "text/javascript; charset=utf-8"),
         "/usage.js" => (include_bytes!("../assets/usage.js"), "text/javascript; charset=utf-8"),
+        "/update.js" => (include_bytes!("../assets/update.js"), "text/javascript; charset=utf-8"),
         "/settings.js" => (include_bytes!("../assets/settings.js"), "text/javascript; charset=utf-8"),
         "/icons.js" => (include_bytes!("../assets/icons.js"), "text/javascript; charset=utf-8"),
         "/icon.png" => (include_bytes!("../assets/icon-256.png"), "image/png"),
@@ -178,22 +182,36 @@ enum Msg {
     Media {
         op: String,
     },
+    /// Look for a newer release (`manual`: also say when there is none).
+    UpdateCheck {
+        #[serde(default)]
+        manual: bool,
+    },
+    /// Download, verify and install the latest release (update wizard).
+    UpdateInstall,
+    /// First-install wizard: run the installer this window was opened for.
+    SetupInstall,
+    /// Start the installed RideShell App and close this window.
+    Relaunch,
 }
 
 struct Startup {
     profile: Option<String>,
     dir: Option<String>,
     wants_admin: bool,
+    /// `--setup <rideshell.exe>`: show the install wizard for that installer.
+    setup: Option<String>,
 }
 
 fn parse_args() -> Startup {
-    let mut s = Startup { profile: None, dir: None, wants_admin: false };
+    let mut s = Startup { profile: None, dir: None, wants_admin: false, setup: None };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--admin" => s.wants_admin = true,
             "--profile" => s.profile = args.next(),
             "--dir" => s.dir = args.next(),
+            "--setup" => s.setup = args.next(),
             _ => {}
         }
     }
@@ -274,7 +292,9 @@ fn main() {
     };
 
     let mut sessions: HashMap<u32, pty::Session> = HashMap::new();
+    let setup_exe = startup.setup.clone().map(PathBuf::from);
     let mut startup = Some(startup);
+    let installing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let refresher = Refresher::new(paths.clone(), cli.is_some(), proxy.clone());
     let media = media::start(proxy.clone());
 
@@ -294,10 +314,11 @@ fn main() {
             }
             Event::UserEvent(UserEvent::State(mut v)) => {
                 if let Some(s) = startup.take() {
-                    v["startup"] = json!({ "profile": s.profile, "dir": s.dir });
+                    v["startup"] = json!({ "profile": s.profile, "dir": s.dir, "setup": s.setup.is_some() });
                 }
                 send(&webview, json!({ "t": "state", "state": v }));
             }
+            Event::UserEvent(UserEvent::Update(v)) => send(&webview, v),
             Event::UserEvent(UserEvent::Dir(v)) => send(&webview, v),
             Event::UserEvent(UserEvent::Created(v)) => {
                 let ok = v["t"] == "created";
@@ -457,6 +478,49 @@ fn main() {
                         send(&webview, json!({ "t": "stateLite", "state": { "classicMenu": explorer::classic_menu() } }));
                     }
                     Msg::RestartExplorer => explorer::restart(),
+                    Msg::UpdateCheck { manual } => {
+                        let p = proxy.clone();
+                        std::thread::spawn(move || {
+                            let v = match updater::check() {
+                                Ok(Some(info)) => json!({ "t": "update", "info": info }),
+                                Ok(None) => json!({ "t": "update", "info": null, "manual": manual }),
+                                Err(e) => json!({ "t": "update", "info": null, "manual": manual, "error": format!("{e:#}") }),
+                            };
+                            let _ = p.send_event(UserEvent::Update(v));
+                        });
+                    }
+                    Msg::UpdateInstall | Msg::SetupInstall => {
+                        use std::sync::atomic::Ordering::SeqCst;
+                        let setup = matches!(msg, Msg::SetupInstall);
+                        let installer = setup_exe.clone();
+                        if (setup && installer.is_none()) || installing.swap(true, SeqCst) {
+                            return;
+                        }
+                        let (p, busy) = (proxy.clone(), installing.clone());
+                        std::thread::spawn(move || {
+                            let report = |v: serde_json::Value| {
+                                let _ = p.send_event(UserEvent::Update(v));
+                            };
+                            let result = match &installer {
+                                Some(exe) if setup => updater::run_installer(exe, &report).map(|()| String::new()),
+                                _ => updater::install_update(&report),
+                            };
+                            if let Err(e) = result {
+                                report(json!({ "t": "wizard", "step": "error", "error": format!("{e:#}") }));
+                            }
+                            busy.store(false, SeqCst);
+                        });
+                    }
+                    Msg::Relaunch => {
+                        let target = updater::installed_app().or_else(|| std::env::current_exe().ok());
+                        if let Some(app) = target {
+                            let _ = std::process::Command::new(app).spawn();
+                        }
+                        for (_, mut s) in sessions.drain() {
+                            s.kill();
+                        }
+                        *control_flow = ControlFlow::Exit;
+                    }
                     Msg::Media { op } => {
                         let cmd = match op.as_str() {
                             "next" => media::Command::Next,

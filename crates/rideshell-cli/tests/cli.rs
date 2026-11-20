@@ -30,7 +30,9 @@ impl Env {
     fn cmd(&self) -> Command {
         let mut c = Command::new(cargo_bin("rideshell"));
         c.env("RIDESHELL_HOME", self.home.path()).env("NO_COLOR", "1").env("RIDESHELL_NO_ADOPT", "1");
-        for v in ["RIDESHELL_PROFILE", "RIDESHELL_STATE", "RIDESHELL_ACTIVE_PROFILE", "RIDESHELL_SHELL"] {
+        for v in
+            ["RIDESHELL_PROFILE", "RIDESHELL_STATE", "RIDESHELL_ACTIVE_PROFILE", "RIDESHELL_SHELL", "RIDESHELL_SESSION"]
+        {
             c.env_remove(v);
         }
         for v in ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_SSH_COMMAND"]
@@ -509,8 +511,19 @@ impl Accounts {
     }
 
     /// Run `claude` exactly as a user would (through the shim on PATH).
+    /// `claude` typed in a RideShell window (profiles apply there).
     fn claude(&self, profile: Option<&str>, dir: &Path) -> std::process::Child {
+        let mut c = self.claude_outside(profile, dir);
+        c.env("RIDESHELL_SESSION", "1");
+        c.spawn().unwrap()
+    }
+
+    /// `claude` typed in a plain terminal: no RideShell session markers at all.
+    fn claude_outside(&self, profile: Option<&str>, dir: &Path) -> Command {
         let mut c = Command::new(&self.shim);
+        for v in ["RIDESHELL_SESSION", "RIDESHELL_SHELL", "RIDESHELL_ACTIVE_PROFILE", "RIDESHELL_STATE"] {
+            c.env_remove(v);
+        }
         c.env("RIDESHELL_HOME", self.e.home.path())
             .env("RIDESHELL_INSECURE_TEST_VAULT", &self.vault)
             .env("PATH", &self.path)
@@ -524,7 +537,7 @@ impl Accounts {
         if let Some(p) = profile {
             c.env("RIDESHELL_PROFILE", p);
         }
-        c.spawn().unwrap()
+        c
     }
 }
 
@@ -594,6 +607,26 @@ fn project_secret_overrides_account_secret_and_binding_picks_account() {
     // Deleting the profile deletes its secrets.
     a.ok(&["profile", "delete", "work", "--force"]);
     assert!(!std::fs::read_to_string(&a.vault).unwrap().contains("sk-work"));
+}
+
+#[test]
+fn outside_rideshell_the_shim_applies_no_profile() {
+    let a = Accounts::new();
+    a.secret(&["ANTHROPIC_API_KEY", "--profile", "work"], "sk-work");
+    a.ok(&["profile", "bind", a.project.to_str().unwrap(), "work"]);
+    // A plain terminal (no RideShell window or shell integration): the real tool runs untouched,
+    // even inside a folder bound to an account.
+    let out = a.claude_outside(None, &a.project).output().unwrap();
+    let text = stdout(&out);
+    assert!(out.status.success(), "{text}{}", stderr(&out));
+    // Unset prints as empty (sh) or as the literal %NAME% (cmd).
+    let unset = |v: String| v.is_empty() || v.starts_with('%');
+    assert!(unset(field(&text, "DIR")), "no account folder outside RideShell: {text}");
+    assert!(unset(field(&text, "KEY")), "no key outside RideShell: {text}");
+    assert!(field(&text, "ARGS").contains("--model"), "arguments pass through: {text}");
+    // Naming a profile explicitly still works anywhere.
+    let out = a.claude_outside(Some("work"), &a.project).output().unwrap();
+    assert!(field(&stdout(&out), "DIR").replace('\\', "/").ends_with("accounts/claude/work"));
 }
 
 #[test]

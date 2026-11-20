@@ -54,6 +54,18 @@
 * `rideshell` on your PATH, and **Open in RideShell** in Explorer's folder menu;
 * an entry in *Settings → Apps*, for uninstalling like any other app.
 
+The installer is a small wizard window. Later versions are offered inside the app (*Settings →
+Updates*), and each download is checked against its published SHA-256 before it installs.
+
+**Linux (x86-64):** the `rideshell` command-line tool (RideShell App is Windows-only for now).
+Needs glibc 2.31+ (Ubuntu 20.04+, Debian 11+, Fedora, Arch…).
+
+```bash
+curl -fLO https://github.com/gauravvvvvvvvvv/RideShell/releases/latest/download/rideshell-linux-x86_64.tar.gz
+tar xzf rideshell-linux-x86_64.tar.gz && install -m755 rideshell ~/.local/bin/
+rideshell shell install bash        # or zsh: profiles per folder, tool shims first on PATH
+```
+
 Building from source: see [Build](#build).
 
 ## Quick start: two Claude Code accounts at once
@@ -225,6 +237,9 @@ RideShell is local software. It has no account, no cloud and no background servi
   * Users can switch it off in Settings, or with `DO_NOT_TRACK=1` / `RIDESHELL_NO_TELEMETRY=1`.
   * The server and dashboard are in [`server/`](server/), so you can see exactly what is
     stored.
+* **Update check:** RideShell App asks GitHub's public API for the latest release shortly after
+  start and every 6 hours. The request carries no ID, only a generic `RideShell-updater/<version>`
+  user agent. Turn it off in *Settings → Updates*. Nothing installs without your OK.
 * **Optional one-line message slot:** official builds may show one line of text in the status
   bar, fetched with no ID, cookies or referrer, so it cannot track you. Builds from source
   leave it out (`RIDESHELL_PROMO_URL`).

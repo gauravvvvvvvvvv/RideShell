@@ -111,6 +111,7 @@ pub fn open_window(ctx: &Ctx) -> Result<i32> {
     session::open(ctx, crate::cli::OpenArgs::default())
 }
 
+#[cfg(windows)]
 pub use session::base64 as encode_base64;
 
 fn launch_app(admin: bool) -> Result<i32> {

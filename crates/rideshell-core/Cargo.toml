@@ -26,6 +26,9 @@ keyring = { workspace = true, features = ["apple-native"] }
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 keyring = { workspace = true, features = ["sync-secret-service", "crypto-rust"] }
+# Build libdbus into the binary (keyring's Secret Service client uses it), so
+# the Linux binary runs without libdbus installed. Only libdbus, no OpenSSL.
+dbus = { version = "0.9", features = ["vendored"] }
 
 [dev-dependencies]
 tempfile.workspace = true

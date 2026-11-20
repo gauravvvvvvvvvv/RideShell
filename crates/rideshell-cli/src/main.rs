@@ -68,6 +68,11 @@ fn double_clicked() -> i32 {
             pause(1)
         });
     }
+    // Not installed: the install wizard window, or (builds without the app)
+    // the installer right here in the console.
+    if commands::install::launch_setup_wizard() {
+        return 0;
+    }
     let code = match commands::install::run(&ctx, cli::InstallArgs { yes: false }) {
         Ok(code) => code,
         Err(e) => {

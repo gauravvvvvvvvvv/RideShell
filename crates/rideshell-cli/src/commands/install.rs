@@ -90,12 +90,28 @@ fn install_app(dir: &Path) -> Result<Option<PathBuf>> {
     }
 }
 
+/// Double-clicked and not installed yet: open the install wizard (the
+/// bundled RideShell App in `--setup` mode, run from a temporary folder)
+/// instead of installing in a console. False when this build has no app.
+#[cfg(windows)]
+pub fn launch_setup_wizard() -> bool {
+    let (Some(bytes), Ok(me)) = (bundle::APP_EXE, std::env::current_exe()) else { return false };
+    let dir = std::env::temp_dir().join(format!("{}-setup-{}", brand::APP_NAME, env!("CARGO_PKG_VERSION")));
+    let app = dir.join(app_name());
+    let ready = app.is_file() && std::fs::metadata(&app).is_ok_and(|m| m.len() == bytes.len() as u64);
+    if !ready && (std::fs::create_dir_all(&dir).is_err() || std::fs::write(&app, bytes).is_err()) {
+        return false;
+    }
+    std::process::Command::new(&app).arg("--setup").arg(&me).spawn().is_ok()
+}
+
 pub fn installed_exe() -> Result<PathBuf> {
     let name = if cfg!(windows) { format!("{}.exe", brand::BIN_NAME) } else { brand::BIN_NAME.to_string() };
     Ok(install_dir()?.join(name))
 }
 
 /// Is this process the installed copy?
+#[cfg(windows)]
 pub fn running_installed_copy() -> bool {
     match (std::env::current_exe(), installed_exe()) {
         (Ok(me), Ok(target)) => same_file(&me, &target),
