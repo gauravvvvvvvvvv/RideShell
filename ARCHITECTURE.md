@@ -335,11 +335,12 @@ project. Secrets stay *references* (`EnvValue::Secret { vault_id }`) until launc
   the environment with secrets, creates account directories, prints one dim notice line when
   stderr is a terminal (`shims.notify`, not for `git`), and `exec`s / spawns the real tool.
 * **Wrong-account guard** (`guard.rs`, `[guard]` in config.toml): before a sensitive command
-  (`git push`, `gh pr create`, deploys, publishes; a tool name plus words that must appear in
-  the arguments), if the profile came from the session (`profile use`) and the folder is
+  (`git push`, `gh pr create`, deploys, publishes; a tool name, its leading subcommands in
+  order with options skipped, plus flags that may appear anywhere; an unknown option's next
+  word may be its value or the subcommand, so it errs towards guarding), if the profile came from the session (`profile use`) and the folder is
   bound to a *different* profile, the shim asks `[y/N]`. Without a terminal it refuses.
   `RIDESHELL_GUARD=0` skips it. Connecting a Git identity shims `git` so `git push` is
-  covered.
+  covered. Unshimmed tools are never checked; `doctor` reports guard coverage.
 * It **fails closed**: a session naming a missing profile is an error, never a fallback to
   another account. `RIDESHELL_SHIM_BYPASS=1` runs the real tool untouched.
 * Overhead is about 20 ms per launch (release build, Windows).

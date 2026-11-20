@@ -41,7 +41,8 @@ Status legend: ✅ done · 🧪 implemented, not yet tested on that platform · 
 * 📋 Cloudflare Wrangler, AWS and Vercel adapters (API-token variables already work via `secret set`)
 * ✅ Sensitive-command guard: confirm before e.g. `git push` / `wrangler deploy` when the
   terminal's account differs from the folder's binding (`[guard]` in config.toml)
-* 📋 Test PowerShell 7, zsh, Linux and macOS (manually or on local VMs; no hosted CI planned)
+* ✅ CI on Windows and Linux: formatting, Clippy, tests, release builds
+* 📋 Test PowerShell 7, zsh and macOS (manually or on local VMs)
 
 ## Milestone 2b: RideShell window ✅ (Windows)
 

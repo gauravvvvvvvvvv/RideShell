@@ -102,10 +102,10 @@ pub fn run_shim(tool: &str, args: Vec<OsString>) -> i32 {
 }
 
 fn run_shim_inner(tool: &str, args: Vec<OsString>) -> Result<i32> {
-    let args: Vec<String> = args
-        .into_iter()
-        .map(|a| a.into_string().map_err(|a| anyhow::anyhow!("argument is not valid Unicode: {a:?}")))
-        .collect::<Result<_>>()?;
+    // Arguments go to the real tool exactly as received (a file name need not
+    // be valid Unicode); the guard only reads a lossy copy.
+    let os_args = args;
+    let args: Vec<String> = os_args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
     let ctx = Ctx::new()?;
     let real = shims::find_real(tool, Some(&ctx.paths.shims_dir()))?;
     let real_s = real.to_string_lossy().into_owned();
@@ -120,7 +120,7 @@ fn run_shim_inner(tool: &str, args: Vec<OsString>) -> Result<i32> {
         [brand::env::SESSION, brand::env::SHELL, brand::env::PROFILE, brand::env::ACTIVE_PROFILE].into_iter().any(set);
     let store = if bypass || !in_rideshell { None } else { Store::open_existing(&ctx.paths.db_file())? };
     let Some(store) = store else {
-        return exec::run(&real_s, &args, &Default::default(), None);
+        return exec::run(&real_s, &os_args, &Default::default(), None);
     };
 
     // Fails closed: if this terminal selected a profile that no longer
@@ -143,7 +143,7 @@ fn run_shim_inner(tool: &str, args: Vec<OsString>) -> Result<i32> {
         };
         anstream::eprintln!("{} {}", ui::dim(format!("{} ▸ {tool} as", brand::BIN_NAME)), who);
     }
-    exec::run(&real_s, &args, &prepared.plan, None)
+    exec::run(&real_s, &os_args, &prepared.plan, None)
 }
 
 /// The account-mismatch guard (`rideshell_core::guard`): before a sensitive

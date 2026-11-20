@@ -148,7 +148,8 @@ share_new_accounts = false
 # identity is connected, and any `rideshell shim add <tool>`).
 # RIDESHELL_GUARD=0 skips it for one command.
 enabled = true
-# A tool, then words that must all appear among its arguments.
+# A tool, its subcommands in order (options before them are skipped), then any
+# flags, which may appear anywhere: "gh pr create", "vercel --prod".
 commands = [
     "git push",
     "gh pr create",

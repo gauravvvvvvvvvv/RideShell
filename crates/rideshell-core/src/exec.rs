@@ -9,6 +9,7 @@
 //!   waiting (the child, which shares the console, still receives it) and
 //!   exits with the child's exit code.
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Command;
 
@@ -18,7 +19,7 @@ use crate::envstate::EnvPlan;
 
 /// Resolve `program` on PATH (honouring PATHEXT on Windows, so `npm` finds
 /// `npm.cmd`) and run it. Returns the exit code (Windows / non-exec paths).
-pub fn run(program: &str, args: &[String], plan: &EnvPlan, cwd: Option<&Path>) -> Result<i32> {
+pub fn run<A: AsRef<OsStr>>(program: &str, args: &[A], plan: &EnvPlan, cwd: Option<&Path>) -> Result<i32> {
     let resolved = which::which(program).with_context(|| format!("command not found: {program}"))?;
     let mut cmd = Command::new(&resolved);
     cmd.args(args);

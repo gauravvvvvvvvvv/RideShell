@@ -170,6 +170,10 @@ h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-t
 .sb-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 11px; }
 .sb-item svg { width: 12px; height: 12px; }
 .sb-spacer { flex: 1; }
+.sb-copied { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; color: var(--green); transition: opacity .25s; }
+.sb-copied[hidden] { display: none; }
+.sb-copied.out { opacity: 0; }
+.sb-copied svg { width: 11px; height: 11px; }
 .sb-media { display: inline-flex; align-items: center; gap: 2px; min-width: 0; max-width: 38%; }
 .sb-song { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--text-2); margin-right: 6px; }
 .sb-media button { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: var(--text-3); }

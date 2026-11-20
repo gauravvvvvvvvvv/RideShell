@@ -130,9 +130,14 @@ Guarded by default: `git push`, `gh pr create/merge`, `gh release create`, `gh r
 create/delete`, `wrangler deploy`, `vercel deploy` / `--prod`, `netlify deploy`, `fly deploy`,
 `npm/pnpm/yarn publish`, `cargo publish`, `docker push`, `terraform apply`, `kubectl apply`,
 `firebase deploy`. Edit the list under `[guard]` in the config file. With no terminal to ask
-in (scripts), it refuses. `RIDESHELL_GUARD=0` skips it once. It covers tools routed through
-RideShell: `claude`, `codex`, `gh`, `git` (once a Git identity is connected) and anything you
-`rideshell shim add`.
+in (scripts), it refuses. `RIDESHELL_GUARD=0` skips it once. Subcommands are matched in order,
+so `git log --grep push` isn't treated as a push.
+
+**The guard only sees tools routed through RideShell:** `claude`, `codex`, `gh`, `git` (once a
+Git identity is connected) and anything you `rideshell shim add`. A guarded tool that isn't
+routed (for example `npm` or `docker` before `rideshell shim add npm`) runs unchecked, and so
+does any tool started outside RideShell. `rideshell doctor` lists which guarded tools are
+protected and which installed ones aren't.
 
 ## RideShell App
 

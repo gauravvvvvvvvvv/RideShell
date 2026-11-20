@@ -35,7 +35,8 @@ pub fn run(ctx: &Ctx) -> Result<i32> {
     anstream::println!();
 
     // Configuration.
-    match Config::load(&ctx.paths) {
+    let config = Config::load(&ctx.paths);
+    match &config {
         Ok(_) if ctx.paths.config_file().exists() => r.ok(format!("config {}", ctx.paths.config_file().display())),
         Ok(_) => r.ok(format!("config: using defaults ({} not created yet)", ctx.paths.config_file().display())),
         Err(e) => r.fail(format!("{e:#}")),
@@ -141,6 +142,9 @@ pub fn run(ctx: &Ctx) -> Result<i32> {
             }
         }
     }
+    if let Ok(config) = &config {
+        guard_coverage(config, &shim_names, &ctx.paths.shims_dir());
+    }
     {
         let v = rideshell_core::vault::open();
         let probe = format!("doctor-probe/{}", std::process::id());
@@ -195,4 +199,40 @@ pub fn run(ctx: &Ctx) -> Result<i32> {
         anstream::println!("{} error(s), {} warning(s)", r.errors, r.warnings);
     }
     Ok(if r.errors > 0 { 1 } else { 0 })
+}
+
+/// Which guarded tools are protected. The guard runs inside the shims, so a
+/// tool that isn't routed through RideShell is never checked.
+fn guard_coverage(config: &Config, shim_names: &[String], shims_dir: &Path) {
+    if !config.guard.enabled {
+        ui::hint("wrong-account guard is off (`[guard] enabled = false`)");
+        return;
+    }
+    let mut tools: Vec<String> = Vec::new();
+    for t in config.guard.commands.iter().filter_map(|c| c.split_whitespace().next()) {
+        let t = t.to_ascii_lowercase();
+        if !tools.contains(&t) {
+            tools.push(t);
+        }
+    }
+    let shimmed = |t: &str| shim_names.iter().any(|n| n.eq_ignore_ascii_case(t));
+    let protected: Vec<&str> = tools.iter().map(String::as_str).filter(|t| shimmed(t)).collect();
+    let unprotected: Vec<&str> = tools
+        .iter()
+        .map(String::as_str)
+        .filter(|t| !shimmed(t) && rideshell_core::shims::find_real(t, Some(shims_dir)).is_ok())
+        .collect();
+    if protected.is_empty() {
+        ui::hint("wrong-account guard: no guarded tool is routed through RideShell yet");
+    } else {
+        ui::success(format!("wrong-account guard protects: {}", protected.join(", ")));
+    }
+    if !unprotected.is_empty() {
+        ui::hint(format!(
+            "not guarded (installed, not routed through {}): {} (`{} shim add <tool>` to guard one)",
+            brand::APP_NAME,
+            unprotected.join(", "),
+            brand::BIN_NAME
+        ));
+    }
 }

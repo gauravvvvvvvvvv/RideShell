@@ -304,9 +304,33 @@ fn main() {
     let refresher = Refresher::new(paths.clone(), cli.is_some(), proxy.clone());
     let media = media::start(proxy.clone());
 
+    // Terminal output waiting to go to the page. Chunks that arrive together
+    // are sent in one call (heavy output would otherwise mean thousands of
+    // script calls a second); anything else that happens flushes it first, so
+    // order is kept.
+    let mut pending: Vec<(u32, Vec<u8>)> = Vec::new();
+    let mut pending_bytes = 0usize;
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         let _ = &web_context;
+        if let Event::UserEvent(UserEvent::PtyData(id, bytes)) = event {
+            pending_bytes += bytes.len();
+            match pending.last_mut() {
+                Some((last, buf)) if *last == id => buf.extend_from_slice(&bytes),
+                _ => pending.push((id, bytes)),
+            }
+            if pending_bytes < 1 << 20 {
+                return;
+            }
+            flush_output(&webview, &mut pending);
+            pending_bytes = 0;
+            return;
+        }
+        if !pending.is_empty() {
+            flush_output(&webview, &mut pending);
+            pending_bytes = 0;
+        }
         match event {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 for s in sessions.values_mut() {
@@ -314,10 +338,7 @@ fn main() {
                 }
                 *control_flow = ControlFlow::Exit;
             }
-            Event::UserEvent(UserEvent::PtyData(id, bytes)) => {
-                let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-                let _ = webview.evaluate_script(&format!("RS.data({id},'{b64}')"));
-            }
+            Event::UserEvent(UserEvent::PtyData(..)) => {} // handled above
             Event::UserEvent(UserEvent::State(mut v)) => {
                 if let Some(s) = startup.take() {
                     v["startup"] = json!({ "profile": s.profile, "dir": s.dir, "setup": s.setup.is_some() });
@@ -690,6 +711,14 @@ impl Refresher {
                 break;
             }
         });
+    }
+}
+
+/// Send buffered terminal output to the page, one call per tab run.
+fn flush_output(webview: &wry::WebView, pending: &mut Vec<(u32, Vec<u8>)>) {
+    for (id, bytes) in pending.drain(..) {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let _ = webview.evaluate_script(&format!("RS.data({id},'{b64}')"));
     }
 }
 

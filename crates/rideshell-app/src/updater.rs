@@ -149,6 +149,19 @@ pub fn install_update(p: Progress) -> Result<String> {
 pub fn download_latest(p: Progress) -> Result<(PathBuf, String)> {
     let r = latest()?;
     let version = r.tag_name.trim_start_matches(['v', 'V']).to_string();
+    // Never install an older (or the same) release: the signature covers the
+    // files, not the version, so this blocks a downgrade to an old signed build.
+    let newer = matches!(
+        (parse_version(&version), parse_version(env!("CARGO_PKG_VERSION"))),
+        (Some(n), Some(c)) if n > c
+    );
+    if !newer {
+        bail!("the latest release ({}) is not newer than this version; nothing was installed", r.tag_name);
+    }
+    // The tag names a folder below: keep it to version characters.
+    if !version.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+')) {
+        bail!("unexpected release name {:?}", r.tag_name);
+    }
     let exe = r.assets.iter().find(|a| a.name == ASSET).context("the release has no rideshell.exe")?;
     let asset = |name: &str| {
         r.assets.iter().find(|a| a.name == name).with_context(|| {

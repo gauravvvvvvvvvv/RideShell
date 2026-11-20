@@ -72,8 +72,20 @@ mod imp {
 
     use super::{Command, NowPlaying};
 
+    thread_local! {
+        // Asking Windows for the session manager is the expensive part, and
+        // this runs every couple of seconds: keep it once it is obtained.
+        static MANAGER: std::cell::RefCell<Option<Manager>> = const { std::cell::RefCell::new(None) };
+    }
+
     fn spotify() -> Option<Session> {
-        let manager = Manager::RequestAsync().ok()?.join().ok()?;
+        let manager = MANAGER.with(|m| {
+            let mut m = m.borrow_mut();
+            if m.is_none() {
+                *m = Manager::RequestAsync().ok()?.join().ok();
+            }
+            m.clone()
+        })?;
         let sessions = manager.GetSessions().ok()?;
         sessions
             .into_iter()

@@ -54,9 +54,11 @@
 
   RS.data = (id, b64) => { const t = RS.tabs.get(id); if (t) t.term.write(b64ToBytes(b64)); };
 
+  let lastState = null;
   RS.recv = (m) => {
     switch (m.t) {
-      case 'state': onState(m.state); break;
+      // Unchanged state (the periodic refresh, usually) re-renders nothing.
+      case 'state': { const j = JSON.stringify(m.state); if (j !== lastState) { lastState = j; onState(m.state); } break; }
       case 'stateLite': RS.state = { ...RS.state, classicMenu: m.state.classicMenu }; break;
       case 'exit': onExit(m.id, m.code); break;
       case 'spawnError': { const t = RS.tabs.get(m.id); if (t) { t.ended = true; t.term.write(`\r\n\x1b[38;5;210m${m.text}\x1b[0m\r\n`); renderTabs(); } break; }
@@ -152,10 +154,10 @@
     });
     term.onResize(({ cols, rows }) => { if (!tab.ended) post({ t: 'resize', id, cols, rows }); });
     term.attachCustomKeyEventHandler((e) => keyHandler(e, tab));
-    term.onSelectionChange(() => { if (SET().values.copyOnSelect && term.hasSelection()) navigator.clipboard.writeText(term.getSelection()).catch(() => {}); });
+    term.onSelectionChange(() => { if (SET().values.copyOnSelect && term.hasSelection()) copyText(term.getSelection(), true); });
     host.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      if (term.hasSelection()) { navigator.clipboard.writeText(term.getSelection()).catch(() => {}); term.clearSelection(); }
+      if (term.hasSelection()) { copyText(term.getSelection()); term.clearSelection(); }
       else post({ t: 'paste', id });
     });
 
@@ -581,6 +583,19 @@
   // ----- Spotify (status bar) -------------------------------------------------------
   // Shown only while Spotify runs and has played; it replaces the shells label.
 
+  // Copy from a terminal, with a short "Copied to clipboard" note in the status bar.
+  let copiedTimer = null;
+  function copyText(text, quiet = false) {
+    navigator.clipboard.writeText(text).then(() => {
+      const note = $('#sb-copied');
+      note.innerHTML = `${I('check')}Copied to clipboard`;
+      note.hidden = false;
+      note.classList.remove('out');
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => { note.classList.add('out'); copiedTimer = setTimeout(() => { note.hidden = true; }, 250); }, 1500);
+    }).catch(() => { if (!quiet) toast('Could not copy to the clipboard', 'error'); });
+  }
+
   function renderMedia(now) {
     const box = $('#sb-media');
     box.hidden = !now;
@@ -945,7 +960,7 @@
     if (act) { e.preventDefault(); act(); return false; }
     const k = e.key.toLowerCase();
     if (e.ctrlKey && k === 'c' && (e.shiftKey || tab.term.hasSelection())) {
-      if (tab.term.hasSelection()) { navigator.clipboard.writeText(tab.term.getSelection()).catch(() => {}); if (!e.shiftKey) tab.term.clearSelection(); }
+      if (tab.term.hasSelection()) { copyText(tab.term.getSelection()); if (!e.shiftKey) tab.term.clearSelection(); }
       e.preventDefault();
       return false;
     }
@@ -1038,7 +1053,8 @@
 
   new ResizeObserver(() => activeTab()?.fit.fit()).observe($('#terminals'));
   window.addEventListener('focus', () => post({ t: 'state' }));
-  setInterval(() => { if (document.hasFocus()) post({ t: 'state' }); }, 10000);
+  // Focusing the window refreshes at once; this only catches installs made while it stays focused.
+  setInterval(() => { if (document.hasFocus()) post({ t: 'state' }); }, 60000);
 
   // Fonts must be ready before xterm measures cells.
   Promise.all([document.fonts.load('13px "Geist Mono"'), document.fonts.load('600 13px "Geist Mono"'), document.fonts.load('13px "Geist"')])

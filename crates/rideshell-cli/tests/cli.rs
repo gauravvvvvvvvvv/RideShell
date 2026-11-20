@@ -760,9 +760,12 @@ fn windows_install_and_uninstall_are_reversible() {
         assert_ne!(std::fs::read(&normal).unwrap(), std::fs::read(&admin).unwrap(), "shortcuts must differ");
     }
 
+    // An update runs `install --yes` over the existing install: accounts and settings stay.
+    e.ok(&["profile", "create", "keepme"]);
     run(&["install", "--yes"]); // idempotent
     let again: String = env_key.get_value("Path").unwrap();
     assert_eq!(again, path, "reinstall does not duplicate PATH entries");
+    assert!(e.ok(&["profile", "list"]).contains("keepme"), "accounts survive an update");
 
     run(&["uninstall", "--program", "--yes", "--keep-shell-integration"]);
     let path: String = env_key.get_value("Path").unwrap();
@@ -771,6 +774,7 @@ fn windows_install_and_uninstall_are_reversible() {
     assert!(!normal.exists() && !admin.exists(), "Start menu entries removed");
     assert!(hkcu.open_subkey(format!(r"{root}\Classes\Directory\shell\RideShell")).is_err(), "Explorer menu removed");
     assert!(!folders.join("Fragments").join("RideShell").exists(), "Terminal profile removed");
+    assert!(e.ok(&["profile", "list"]).contains("keepme"), "uninstall without --purge keeps accounts");
     hkcu.delete_subkey_all(&root).unwrap();
 }
 

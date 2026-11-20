@@ -2,6 +2,25 @@
 
 Five releases in two days. Newest first.
 
+## Unreleased
+
+* Wrong-account guard: subcommands are matched in order, with options before them skipped,
+  so `git log --grep push` or `git commit -m push` no longer ask for confirmation, while
+  `git -C repo push` and `gh pr -R owner/repo create` still do. Bare `vercel` (which
+  deploys), `docker image push` and `wrangler versions deploy` / `pages deploy` are guarded
+  too, also with config files written by older versions.
+* `rideshell doctor` shows which guarded tools are protected and which installed ones aren't
+  routed through RideShell (so their sensitive commands run unchecked).
+* Tool shims pass arguments through byte for byte: a file name that isn't valid Unicode no
+  longer stops `git add` and friends on Linux.
+* Updates: an update is refused unless it is newer than the installed version, so an old
+  signed release can't be pushed as a downgrade.
+* RideShell App uses less CPU: terminal output that arrives together is drawn in one go,
+  the Spotify watcher keeps one connection to Windows, and the background refresh runs
+  every minute instead of every 10 seconds (focusing the window still refreshes at once)
+  and redraws nothing when nothing changed. Idle CPU went from about 2.5% to 0.5% of a core.
+* CI: formatting, Clippy, tests and release builds on Windows and Linux.
+
 ## 0.1.4 (2026-11-20)
 
 **Clickable paths, a tidier sidebar, a proper Apps entry.**

@@ -38,6 +38,9 @@ below, and each only happens in the case described:
     release, or someone who takes over the GitHub account or repository without the key, cannot
     get an update installed. (RideShell 0.1.2 checked only an unsigned `.sha256` file from the
     same release; it updates to a signed version once, after which updates must be signed.)
+  * **No downgrades (from 0.1.5):** an update must be newer than the installed version. The
+    signature covers the files, not the version number, so without this check someone holding
+    the GitHub account could republish an older signed build as the latest release.
   * The executables are **not code-signed** (Authenticode), so Windows SmartScreen may warn
     on first download.
 * **Anonymous user count:** only in builds made with `RIDESHELL_TELEMETRY_URL`, and only

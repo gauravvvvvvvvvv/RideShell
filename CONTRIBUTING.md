@@ -64,8 +64,10 @@ isolated `RIDESHELL_HOME`, and drives real shells when they are present:
 
 Missing shells are skipped with a `SKIP` line (see it with `cargo test -- --nocapture`).
 Please mention in your PR which shells and operating systems you ran the suite on. That is
-how we keep the support table in the README honest. The project has no hosted CI, so
-these local runs are the record.
+how we keep the support table in the README honest. CI (`.github/workflows/ci.yml`) runs
+formatting, Clippy, the tests and release builds on Windows and Linux for every push and pull
+request; it has PowerShell 5.1, cmd and bash, so PowerShell 7, zsh and macOS still rely on
+these local runs.
 
 ## Code layout
 

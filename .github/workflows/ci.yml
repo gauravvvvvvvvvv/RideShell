@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # Tests must never pick up a RideShell session from the runner.
+  RIDESHELL_NO_ADOPT: "1"
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --locked --workspace
+      - name: Release build (CLI + app)
+        run: cargo build --locked --release -p rideshell-cli -p rideshell-app
+
+  linux:
+    # RideShell App is Windows-only; Linux ships the CLI.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --locked -p rideshell-core -p rideshell-cli -p rideshell-release --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --locked -p rideshell-core -p rideshell-cli -p rideshell-release
+      - name: Release build (CLI)
+        run: cargo build --locked --release -p rideshell-cli
