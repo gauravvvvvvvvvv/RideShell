@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/app.png" alt="RideShell App: accounts with their tools as icons, a PowerShell tab running cmd and bash lines, the work account's Git identity, and a clickable file path" width="860">
+  <a href="docs/media/rideshell-demo.mp4"><img src="docs/media/rideshell-demo-poster.jpg" alt="Watch the 44-second RideShell demo: one terminal, every account, zero logging out" width="860"></a>
 </p>
 
 ---
