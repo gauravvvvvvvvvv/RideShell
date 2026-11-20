@@ -26,9 +26,7 @@
   <a href="CHANGELOG.md">What's new</a>
 </p>
 
-<p align="center">
-  <a href="docs/media/rideshell-demo.mp4"><img src="docs/media/rideshell-demo-poster.jpg" alt="Watch the 44-second RideShell demo: one terminal, every account, zero logging out" width="860"></a>
-</p>
+https://github.com/user-attachments/assets/8f8d32a3-68a2-4d83-846b-0712541abec4
 
 ---
 
