@@ -3,7 +3,8 @@
 //! * [`check`] asks GitHub for the latest release (one small HTTPS request,
 //!   no ID, generic User-Agent) and reports it when it is newer.
 //! * [`install_update`] downloads that release's `rideshell.exe`, checks it
-//!   against the `rideshell.exe.sha256` published with it, and runs its
+//!   against the release's signed checksum list (`SHA256SUMS` + `.sig`,
+//!   see `rideshell_core::release`), and runs its
 //!   installer without a window. RideShell App shows the steps as a wizard.
 //! * [`run_installer`] is the last step on its own, for the first-install
 //!   wizard (`rideshell-app --setup <rideshell.exe>`).
@@ -23,7 +24,7 @@ use serde_json::{json, Value};
 /// Where official releases are published.
 pub const REPO: &str = "gauravvvvvvvvvv/RideShell";
 const ASSET: &str = "rideshell.exe";
-const CHECKSUM: &str = "rideshell.exe.sha256";
+use rideshell_core::release::{MANIFEST, SIGNATURE};
 
 #[derive(Deserialize)]
 struct Release {
@@ -143,17 +144,18 @@ pub fn install_update(p: Progress) -> Result<String> {
     Ok(version)
 }
 
-/// Download the latest release's rideshell.exe and check its SHA-256.
+/// Download the latest release's rideshell.exe and verify it against the signed checksum list.
 /// Returns the verified file and the version.
 pub fn download_latest(p: Progress) -> Result<(PathBuf, String)> {
     let r = latest()?;
     let version = r.tag_name.trim_start_matches(['v', 'V']).to_string();
     let exe = r.assets.iter().find(|a| a.name == ASSET).context("the release has no rideshell.exe")?;
-    let sum = r
-        .assets
-        .iter()
-        .find(|a| a.name == CHECKSUM)
-        .context("the release has no checksum file, so it cannot be verified")?;
+    let asset = |name: &str| {
+        r.assets.iter().find(|a| a.name == name).with_context(|| {
+            format!("the release has no {name}, so it cannot be verified; download it from the release page instead")
+        })
+    };
+    let (manifest, signature) = (asset(MANIFEST)?, asset(SIGNATURE)?);
 
     // 1. Download (progress from the file's size as curl writes it).
     step(p, "download", Some(0.0));
@@ -192,12 +194,13 @@ pub fn download_latest(p: Progress) -> Result<(PathBuf, String)> {
         let _ = std::fs::remove_file(&file);
         bail!("the download is incomplete ({got} of {} bytes)", exe.size);
     }
-    let expected = fetch_text(official(&sum.browser_download_url)?)?;
-    let expected = expected.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
+    // The checksum list must carry the project's release signature, and list this file's hash.
+    let list = fetch_text(official(&manifest.browser_download_url)?)?;
+    let sig = fetch_text(official(&signature.browser_download_url)?)?;
     let actual = sha256_file(&file)?;
-    if expected.len() != 64 || expected != actual {
+    if let Err(e) = rideshell_core::release::check_download(list.as_bytes(), &sig, ASSET, &actual) {
         let _ = std::fs::remove_file(&file);
-        bail!("the download does not match its published SHA-256 checksum; nothing was installed");
+        return Err(e.context("the download could not be verified; nothing was installed"));
     }
     Ok((file, version))
 }
@@ -242,14 +245,14 @@ mod tests {
     fn live_check_download_and_verify() {
         println!("CHECK: {:?}", check().map(|v| v.map(|i| i["version"].clone())));
         let steps = std::cell::RefCell::new(Vec::new());
-        let (file, version) = download_latest(&|v| steps.borrow_mut().push(v["step"].to_string())).unwrap();
+        // Releases before 0.1.3 carry no signature: they must be refused.
+        match download_latest(&|v| steps.borrow_mut().push(v["step"].to_string())) {
+            Ok((file, version)) => println!("VERIFIED {version}: {}", file.display()),
+            Err(e) => println!("REFUSED: {e:#}"),
+        }
         let mut seen = steps.into_inner();
         seen.dedup();
-        println!(
-            "VERIFIED {version}: {} ({} bytes), steps {seen:?}",
-            file.display(),
-            std::fs::metadata(&file).unwrap().len()
-        );
+        println!("steps {seen:?}");
     }
 
     #[test]

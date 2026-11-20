@@ -47,6 +47,11 @@ impl Provider for Git {
     fn tool(&self) -> &'static str {
         "git"
     }
+    /// Route `git` through RideShell once an identity is connected, so the
+    /// account guard can check `git push` (outside RideShell it runs as is).
+    fn auto_shim(&self) -> bool {
+        true
+    }
     fn settings(&self) -> &'static [SettingSpec] {
         SETTINGS
     }

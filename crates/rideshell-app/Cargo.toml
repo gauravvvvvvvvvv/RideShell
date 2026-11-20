@@ -27,7 +27,7 @@ rfd.workspace = true
 png.workspace = true
 dirs.workspace = true
 # Verifying downloaded updates against their published SHA-256.
-sha2 = "0.10"
+sha2.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

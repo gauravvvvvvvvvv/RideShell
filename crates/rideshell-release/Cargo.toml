@@ -1,0 +1,13 @@
+[package]
+name = "rideshell-release"
+description = "Maintainer tool: sign RideShell releases (not shipped to users)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+rideshell-core.workspace = true
+anyhow.workspace = true

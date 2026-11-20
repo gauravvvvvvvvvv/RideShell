@@ -127,10 +127,14 @@ fn run_shim_inner(tool: &str, args: Vec<OsString>) -> Result<i32> {
     // exists, `prepare` errors instead of using some other account.
     let mut prepared = run::prepare(&ctx, &store, None, None, true)?;
     run::add_tool_scoped(&ctx, &store, &mut prepared, tool)?;
+    let config = ctx.config().unwrap_or_default();
+    if !guard_allows(&config, &store, &prepared, tool, &args)? {
+        return Ok(1);
+    }
     drop(store);
 
-    let config = ctx.config().unwrap_or_default();
-    if config.shims.notify && std::io::stderr().is_terminal() {
+    // git runs constantly; announcing the account each time would be noise.
+    if config.shims.notify && std::io::stderr().is_terminal() && !tool.eq_ignore_ascii_case("git") {
         let who = match &prepared.resolution.profile {
             Some(p) => {
                 format!("{} {}", ui::accent(&p.name), ui::dim(format!("({})", prepared.resolution.source.describe())))
@@ -140,6 +144,54 @@ fn run_shim_inner(tool: &str, args: Vec<OsString>) -> Result<i32> {
         anstream::eprintln!("{} {}", ui::dim(format!("{} ▸ {tool} as", brand::BIN_NAME)), who);
     }
     exec::run(&real_s, &args, &prepared.plan, None)
+}
+
+/// The account-mismatch guard (`rideshell_core::guard`): before a sensitive
+/// command, confirm when this terminal's account (chosen with `profile use`)
+/// differs from the account the folder is bound to. No terminal to ask in:
+/// refuse (set RIDESHELL_GUARD=0 to run it anyway).
+fn guard_allows(
+    config: &rideshell_core::config::Config,
+    store: &Store,
+    prepared: &run::Prepared,
+    tool: &str,
+    args: &[String],
+) -> Result<bool> {
+    use rideshell_core::{guard, resolve};
+    if !config.guard.enabled || guard::disabled_by_env() {
+        return Ok(true);
+    }
+    let Some(command) = guard::matching(&config.guard.commands, tool, args) else { return Ok(true) };
+    let Some(active) = &prepared.resolution.profile else { return Ok(true) };
+    if !matches!(prepared.resolution.source, resolve::Source::Session) {
+        return Ok(true); // the folder's own account (or the default) is in use
+    }
+    let Ok(cwd) = std::env::current_dir() else { return Ok(true) };
+    let Some(bound) = resolve::find_binding(&store.bindings()?, &cwd) else { return Ok(true) };
+    if bound.profile.eq_ignore_ascii_case(&active.name) {
+        return Ok(true);
+    }
+    ui::warn(format!(
+        "this folder belongs to {}, but this terminal is using {} (switched with `profile use`)",
+        ui::accent(&bound.profile),
+        ui::accent(&active.name)
+    ));
+    if std::io::stdin().is_terminal() && std::io::stderr().is_terminal() {
+        if ui::confirm(&format!("Run `{command}` as {}?", active.name), false) {
+            return Ok(true);
+        }
+        anstream::eprintln!(
+            "Cancelled. Switch with `{} profile use {}`, then try again.",
+            brand::BIN_NAME,
+            bound.profile
+        );
+        return Ok(false);
+    }
+    anstream::eprintln!(
+        "Refused `{command}` (no terminal to confirm in). Switch accounts, or set {}=0 to run it anyway.",
+        rideshell_core::guard::DISABLE_ENV
+    );
+    Ok(false)
 }
 
 /// `rideshell tools`: every command on PATH, grouped by where it came from.

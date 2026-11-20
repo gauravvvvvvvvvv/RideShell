@@ -20,10 +20,26 @@ credential handling worse.
 
 ## Network
 
-RideShell itself makes no network requests. These are the exceptions, and each only happens in
-the case described:
+The `rideshell` command-line tool makes no network requests. RideShell App makes only the ones
+below, and each only happens in the case described:
 
 * **Tools you run** (Claude Code, git, npm...) use the network as they always do.
+* **Update check (RideShell App, Windows):** shortly after start and every 6 hours, while
+  *Settings → Updates → Check for updates automatically* is on (the default), one HTTPS GET to
+  `api.github.com/repos/gauravvvvvvvvvv/RideShell/releases/latest`, with a generic
+  `RideShell-updater/<version>` User-Agent and no ID or cookies. It runs through Windows' own
+  `curl.exe`, hidden. Nothing downloads or installs unless you choose **Install update**. Then
+  the release's `rideshell.exe`, `SHA256SUMS` and `SHA256SUMS.sig` are downloaded, only from
+  this repository's release URLs and only over HTTPS.
+  * **Signed updates (from 0.1.3):** `SHA256SUMS` must carry a valid **Ed25519 signature**
+    made with the project's release key, and the download's SHA-256 must be the one it lists.
+    Otherwise nothing is installed. The release key is kept offline by the maintainer; its
+    public half is built into RideShell (`crates/rideshell-core/src/release.rs`). So a tampered
+    release, or someone who takes over the GitHub account or repository without the key, cannot
+    get an update installed. (RideShell 0.1.2 checked only an unsigned `.sha256` file from the
+    same release; it updates to a signed version once, after which updates must be signed.)
+  * The executables are **not code-signed** (Authenticode), so Windows SmartScreen may warn
+    on first download.
 * **Anonymous user count:** only in builds made with `RIDESHELL_TELEMETRY_URL`, and only
   while it is enabled (Settings → Privacy & usage; `DO_NOT_TRACK=1` and
   `RIDESHELL_NO_TELEMETRY=1` turn it off). At most every 5 minutes, RideShell App sends

@@ -521,7 +521,9 @@ impl Accounts {
     /// `claude` typed in a plain terminal: no RideShell session markers at all.
     fn claude_outside(&self, profile: Option<&str>, dir: &Path) -> Command {
         let mut c = Command::new(&self.shim);
-        for v in ["RIDESHELL_SESSION", "RIDESHELL_SHELL", "RIDESHELL_ACTIVE_PROFILE", "RIDESHELL_STATE"] {
+        for v in
+            ["RIDESHELL_SESSION", "RIDESHELL_SHELL", "RIDESHELL_ACTIVE_PROFILE", "RIDESHELL_STATE", "RIDESHELL_GUARD"]
+        {
             c.env_remove(v);
         }
         c.env("RIDESHELL_HOME", self.e.home.path())
@@ -627,6 +629,51 @@ fn outside_rideshell_the_shim_applies_no_profile() {
     // Naming a profile explicitly still works anywhere.
     let out = a.claude_outside(Some("work"), &a.project).output().unwrap();
     assert!(field(&stdout(&out), "DIR").replace('\\', "/").ends_with("accounts/claude/work"));
+}
+
+#[test]
+fn guard_asks_before_sensitive_commands_as_another_account() {
+    let a = Accounts::new();
+    std::fs::write(
+        a.e.home.path().join("config.toml"),
+        "[guard]
+commands = [\"claude deploy\"]
+",
+    )
+    .unwrap();
+    a.ok(&["profile", "bind", a.project.to_str().unwrap(), "work"]);
+    // `claude deploy` in RideShell, in the work folder, as personal; no terminal to confirm in.
+    let run = |profile: &str, dir: &Path, guard: Option<&str>| {
+        let mut c = a.claude_outside(Some(profile), dir);
+        c.env("RIDESHELL_SESSION", "1").arg("deploy").stdin(std::process::Stdio::null());
+        if let Some(v) = guard {
+            c.env("RIDESHELL_GUARD", v);
+        }
+        c.output().unwrap()
+    };
+    let out = run("personal", &a.project, None);
+    assert_eq!(out.status.code(), Some(1), "refused: {}{}", stdout(&out), stderr(&out));
+    assert!(!stdout(&out).contains("DIR="), "the tool never ran");
+    assert!(stderr(&out).contains("belongs to work") && stderr(&out).contains("RIDESHELL_GUARD=0"), "{}", stderr(&out));
+
+    // The folder's own account, another folder, or an explicit override: runs.
+    for (profile, dir, guard) in [
+        ("work", &a.project, None),
+        ("personal", &a.e.work.path().to_path_buf(), None),
+        ("personal", &a.project, Some("0")),
+    ] {
+        let out = run(profile, dir, guard);
+        assert!(
+            out.status.success() && stdout(&out).contains("ARGS="),
+            "{profile} {guard:?}: {}{}",
+            stdout(&out),
+            stderr(&out)
+        );
+    }
+    // Commands that aren't sensitive are never asked about.
+    let mut c = a.claude_outside(Some("personal"), &a.project);
+    let out = c.env("RIDESHELL_SESSION", "1").arg("--resume").stdin(std::process::Stdio::null()).output().unwrap();
+    assert!(out.status.success() && stdout(&out).contains("ARGS="));
 }
 
 #[test]

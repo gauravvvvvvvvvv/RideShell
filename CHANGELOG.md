@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.3 (2026-11-20)
+
+* **Signed updates.** Releases now publish `SHA256SUMS` and an Ed25519 signature
+  (`SHA256SUMS.sig`) made with the project's offline release key. RideShell App installs an
+  update only when the signature is valid and the download matches the signed list. A tampered
+  release or a taken-over GitHub account can't push an update without the key. Maintainers sign
+  with the new `rideshell-release` tool (not shipped).
+* **Wrong-account guard.** Before `git push`, `gh pr create`, deploys, publishes and similar
+  commands, RideShell asks when the terminal's account differs from the folder's bound account.
+  Without a terminal to ask in, it refuses (`RIDESHELL_GUARD=0` overrides). Configurable in
+  `[guard]`. Connecting a Git identity now routes `git` through RideShell so `git push` is covered
+  (outside RideShell, `git` runs untouched).
+* **Linux keyring tested:** keys stored in and read from a real GNOME Keyring over D-Bus, kept
+  apart per account, removed with the account.
+* Docs: `SECURITY.md` lists the update check and what the signature proves; the release process
+  is in `CONTRIBUTING.md` (and its broken build-script path is fixed).
+
 ## 0.1.2 (2026-11-20)
 
 * **Updates inside the app.** RideShell App checks GitHub Releases shortly after start and every

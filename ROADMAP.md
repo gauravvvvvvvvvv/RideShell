@@ -38,8 +38,8 @@ Status legend: ✅ done · 🧪 implemented, not yet tested on that platform · 
 * 📋 Verify Claude Code login separation on macOS (Keychain) and Linux
 * 📋 SSH adapter (beyond Git): per-profile `IdentityFile` / config include
 * 📋 Cloudflare Wrangler, AWS and Vercel adapters (API-token variables already work via `secret set`)
-* 📋 Sensitive-command guard (confirm before e.g. `git push` / `wrangler deploy` when the
-  active profile differs from the directory's binding)
+* ✅ Sensitive-command guard: confirm before e.g. `git push` / `wrangler deploy` when the
+  terminal's account differs from the folder's binding (`[guard]` in config.toml)
 * 📋 Test PowerShell 7, zsh, Linux and macOS (manually or on local VMs; no hosted CI planned)
 
 ## Milestone 2b: RideShell window ✅ (Windows)

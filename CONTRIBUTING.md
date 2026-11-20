@@ -20,6 +20,23 @@ On Windows, the single release executable (CLI + RideShell App bundled) is built
 `cargo run -p rideshell-app`. Its UI lives in `crates/rideshell-app/assets/` (plain HTML,
 CSS and JavaScript, compiled in; there is no npm build step).
 
+### Publishing a release (maintainer)
+
+Every release must be **signed**, or RideShell App refuses it as an update.
+
+1. Bump `version` in `Cargo.toml`, date the `CHANGELOG.md` section, run `cargo test`.
+2. Build: `scriptsuild-release.ps1` (Windows) and the Linux CLI in Docker (`rust:1-bullseye`,
+   `cargo build --locked --release -p rideshell-cli`), packed as `rideshell-linux-x86_64.tar.gz`.
+3. Put the files in one folder and sign it:
+   `cargo run -p rideshell-release -- sign <folder>`. This writes `SHA256SUMS`,
+   `SHA256SUMS.sig` and a `.sha256` per file, then verifies them with the key built into RideShell.
+4. Upload everything in the folder to the GitHub release.
+
+The signing key is made once with `rideshell-release keygen` and lives outside the repository
+(`~/.rideshell-release/signing.key`, or the file in `RIDESHELL_SIGNING_KEY`). Its public half is
+`RELEASE_PUBLIC_KEY` in `crates/rideshell-core/src/release.rs`. Never commit the secret key, and
+keep a backup: without it, existing installs can't accept updates.
+
 Try it without touching your real data:
 
 ```sh

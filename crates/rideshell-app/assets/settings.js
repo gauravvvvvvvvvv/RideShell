@@ -325,7 +325,7 @@
   function updates(body) {
     const U = window.RSUpdate;
     const st = RS.state || {};
-    h(body, 'Updates', `You have RideShell ${esc(st.version || '')}. New versions come from the project's GitHub Releases, are checked against their published SHA-256 before installing, and install without a terminal window.`);
+    h(body, 'Updates', `You have RideShell ${esc(st.version || '')}. New versions come from the project's GitHub Releases, must carry the project's release signature (Ed25519) and match its signed SHA-256 list before they install, and install without a terminal window.`);
     const c = card(body);
     row(c, 'Check for updates automatically', 'Shortly after start and every 6 hours: one request to GitHub, with no ID or personal data. Nothing installs without your OK.', toggle(S.values.updateCheck !== false, (v) => { S.values.updateCheck = v; S.save(); }));
     const avail = U?.available();

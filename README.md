@@ -55,7 +55,8 @@
 * an entry in *Settings → Apps*, for uninstalling like any other app.
 
 The installer is a small wizard window. Later versions are offered inside the app (*Settings →
-Updates*), and each download is checked against its published SHA-256 before it installs.
+Updates*), and an update installs only if it carries the project's release signature (Ed25519)
+and matches its signed SHA-256 list.
 
 **Linux (x86-64):** the `rideshell` command-line tool (RideShell App is Windows-only for now).
 Needs glibc 2.31+ (Ubuntu 20.04+, Debian 11+, Fedora, Arch…).
@@ -91,6 +92,19 @@ sign-in screens of its own, and API keys are just the account's variables (`ride
 rideshell profile bind C:\code\acme work    # this folder (and below) is always "work"
 rideshell run --profile personal -- claude  # one command, one account
 ```
+
+**Wrong-account guard.** If a terminal was switched to another account (`profile use`, or a click
+in the app) and you run `git push`, `gh pr create`, `wrangler deploy`, `npm publish` or another
+sensitive command in a folder bound to a *different* account, RideShell asks first:
+
+```text
+warning: this folder belongs to work, but this terminal is using personal (switched with `profile use`)
+Run `git push` as personal? [y/N]
+```
+
+The list is `[guard] commands` in the config file. Set `RIDESHELL_GUARD=0` to skip it once. It
+covers tools routed through RideShell: `claude`, `codex`, `gh`, `git` (once a Git identity is
+connected) and anything you `rideshell shim add`.
 
 ## RideShell App
 
@@ -274,8 +288,13 @@ v0.1, early but solid on **Windows 11**. Tested there:
 * the RideShell window in a real interactive console;
 * Claude Code and Codex login separation.
 
-Implemented but not yet tested: PowerShell 7 as the tab engine, zsh, macOS and Linux. The UAC
-prompt itself and the native folder picker need a person, so they aren't automated. See
+**Linux (command-line tool):** the full test suite passes on Linux (Debian 11). The release was
+also checked on clean Ubuntu 22.04, Ubuntu 24.04 and Debian 11: install, two accounts, per-folder
+switching in interactive bash, and tool shims. Keys were stored in and read back from a real
+GNOME Keyring over D-Bus (Secret Service), kept apart per account. KWallet is not tested.
+
+Implemented but not yet tested: PowerShell 7 as the tab engine, zsh and macOS. The UAC prompt
+itself and the native folder picker need a person, so they aren't automated. See
 [ROADMAP.md](ROADMAP.md).
 
 ## Documentation

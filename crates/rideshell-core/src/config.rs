@@ -18,6 +18,23 @@ pub struct Config {
     pub shims: ShimsConfig,
     pub session: SessionConfig,
     pub history: HistoryConfig,
+    pub guard: GuardConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct GuardConfig {
+    /// Ask before a sensitive command when the terminal's account differs
+    /// from the folder's bound account (see `crate::guard`).
+    pub enabled: bool,
+    /// Sensitive commands: a tool and words that must appear among its arguments.
+    pub commands: Vec<String>,
+}
+
+impl Default for GuardConfig {
+    fn default() -> Self {
+        Self { enabled: true, commands: crate::guard::DEFAULT_COMMANDS.iter().map(|s| s.to_string()).collect() }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -123,6 +140,37 @@ show_dialect = true
 # conversations you already had. Off: every account's conversations stay its
 # own. Per account: `rideshell history share|separate <tool> --profile <name>`.
 share_new_accounts = false
+
+[guard]
+# Before a sensitive command (below), ask when this terminal's account differs
+# from the account the folder is bound to (for example after `profile use`).
+# Works for tools routed through RideShell (claude, codex, gh, git once a Git
+# identity is connected, and any `rideshell shim add <tool>`).
+# RIDESHELL_GUARD=0 skips it for one command.
+enabled = true
+# A tool, then words that must all appear among its arguments.
+commands = [
+    "git push",
+    "gh pr create",
+    "gh pr merge",
+    "gh release create",
+    "gh repo create",
+    "gh repo delete",
+    "wrangler deploy",
+    "wrangler publish",
+    "vercel deploy",
+    "vercel --prod",
+    "netlify deploy",
+    "fly deploy",
+    "npm publish",
+    "pnpm publish",
+    "yarn publish",
+    "cargo publish",
+    "docker push",
+    "terraform apply",
+    "kubectl apply",
+    "firebase deploy",
+]
 "#;
 
 impl Config {

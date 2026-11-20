@@ -2,7 +2,7 @@
 //
 // * About 15 s after start and every 6 hours (Settings → Updates can turn it
 //   off), the app asks GitHub for the latest release. Newer → a popup.
-// * Installing shows a wizard: download → verify (SHA-256) → install (no
+// * Installing shows a wizard: download → verify (release signature + SHA-256) → install (no
 //   terminal window) → restart. The work happens in Rust, off the UI thread.
 // * `rideshell-app --setup <rideshell.exe>` (what a double-click on the
 //   downloaded rideshell.exe opens) shows the same wizard as the installer.
@@ -19,7 +19,7 @@
   let stepNow = null;
 
   const STEPS = {
-    update: [['download', 'Download'], ['verify', 'Verify (SHA-256)'], ['install', 'Install'], ['done', 'Ready']],
+    update: [['download', 'Download'], ['verify', 'Verify signature'], ['install', 'Install'], ['done', 'Ready']],
     setup: [['install', 'Install'], ['done', 'Ready']],
   };
 
