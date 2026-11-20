@@ -1,8 +1,10 @@
 # Changelog
 
-Five releases in two days. Newest first.
+Six releases in three days. Newest first.
 
-## Unreleased
+## 0.1.5 (2026-11-21)
+
+**Launch hardening: a smarter account guard, safer updates, lower CPU, working links.**
 
 * Wrong-account guard: subcommands are matched in order, with options before them skipped,
   so `git log --grep push` or `git commit -m push` no longer ask for confirmation, while

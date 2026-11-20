@@ -2816,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "rideshell-app"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2841,7 +2841,7 @@ dependencies = [
 
 [[package]]
 name = "rideshell-cli"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anstream 0.6.21",
  "anstyle",
@@ -2862,7 +2862,7 @@ dependencies = [
 
 [[package]]
 name = "rideshell-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "dbus",
@@ -2882,7 +2882,7 @@ dependencies = [
 
 [[package]]
 name = "rideshell-release"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "rideshell-core",
