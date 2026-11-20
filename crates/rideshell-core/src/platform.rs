@@ -103,7 +103,26 @@ pub fn is_elevated() -> bool {
 /// Open a file or URL with its default program.
 #[cfg(windows)]
 pub fn open_with_default(target: &str) -> Result<()> {
-    std::process::Command::new("explorer.exe").arg(target).spawn().context("cannot open")?;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    // The shell's own "open" (not `explorer.exe <url>`, which mangles some URLs,
+    // e.g. ones with commas).
+    let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (verb, file) = (wide("open"), wide(target));
+    let r = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // Values above 32 mean success.
+    if r as isize <= 32 {
+        anyhow::bail!("cannot open {target} (error {})", r as isize);
+    }
     Ok(())
 }
 

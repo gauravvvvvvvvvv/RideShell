@@ -119,6 +119,9 @@
       fontWeight: 400, fontWeightBold: 640, cursorWidth: 2, scrollback: 10000,
       allowProposedApi: true, drawBoldTextInBrightColors: false,
       windowsPty: { backend: 'conpty', buildNumber: 22621 },
+      // Links that programs mark up themselves (OSC 8, e.g. Claude Code). xterm's default
+      // asks with confirm() and then calls window.open, which the app's web view ignores.
+      linkHandler: { activate: (_e, uri) => openLink(uri, tab), allowNonHttpProtocols: true },
       ...SET().termOptions(),
     });
     const fit = new FitAddon.FitAddon();
@@ -167,6 +170,17 @@
       post({ t: 'spawn', id, profile, cwd, command, cols: term.cols, rows: term.rows });
     });
     return tab;
+  }
+
+  // Open a link from a terminal: web links in the browser, file links like clickable paths.
+  function openLink(uri, tab) {
+    if (/^https?:\/\//i.test(uri)) { post({ t: 'open', what: uri }); return; }
+    if (/^file:/i.test(uri)) {
+      let path;
+      try { path = decodeURIComponent(new URL(uri).pathname); } catch { return; }
+      if (/^\/[a-zA-Z]:/.test(path)) path = path.slice(1); // /C:/x -> C:/x
+      post({ t: 'reveal', path, cwd: tab?.live.cwd || tab?.cwd || null });
+    }
   }
 
   // ----- clickable paths -------------------------------------------------------------

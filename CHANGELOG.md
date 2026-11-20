@@ -19,6 +19,10 @@ Five releases in two days. Newest first.
   the Spotify watcher keeps one connection to Windows, and the background refresh runs
   every minute instead of every 10 seconds (focusing the window still refreshes at once)
   and redraws nothing when nothing changed. Idle CPU went from about 2.5% to 0.5% of a core.
+* Links that programs mark up themselves (OSC 8, as Claude Code prints them) open again.
+  They used to ask "Do you want to navigate…?" and then do nothing. Web links open in your
+  browser, file links like clickable paths. Links now open through the Windows shell, so URLs
+  with commas arrive intact.
 * CI: formatting, Clippy, tests and release builds on Windows and Linux.
 
 ## 0.1.4 (2026-11-20)
