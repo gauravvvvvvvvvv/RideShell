@@ -122,6 +122,7 @@
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon.WebLinksAddon((_e, uri) => post({ t: 'open', what: uri })));
+    term.registerLinkProvider(pathLinks(term, () => tab)); // tab is created below
     term.open(host);
     try { const gl = new WebglAddon.WebglAddon(); gl.onContextLoss(() => gl.dispose()); term.loadAddon(gl); } catch { /* DOM renderer fallback */ }
 
@@ -164,6 +165,75 @@
       post({ t: 'spawn', id, profile, cwd, command, cols: term.cols, rows: term.rows });
     });
     return tab;
+  }
+
+  // ----- clickable paths -------------------------------------------------------------
+  // File and folder paths in terminal output open in Explorer (a file is selected there).
+  // Absolute (C:\x, "C:\Program Files\x", ~\x, %USERPROFILE%\x, /c/x) and relative paths with a
+  // folder and an extension (src/main.rs:12). URLs are left to the web-links addon.
+
+  const PATH_RES = [
+    // Quoted, may contain spaces: "C:\Program Files\x", `~/x y`
+    { re: /(["'`])((?:[A-Za-z]:[\\/]|~[\\/]|%\w+%[\\/]|\/[a-zA-Z]\/)[^"'`\r\n]*?)\1/g, group: 2 },
+    // Absolute, no spaces.
+    { re: /(?<![\w/.:%~-])(?:[A-Za-z]:[\\/]|~[\\/]|%\w+%[\\/]|\/[a-zA-Z]\/)[^\s"'`<>|*?]*/g, group: 0 },
+    // Relative: at least one folder and a file extension, optional :line[:col].
+    { re: /(?<![\w/\\.:%~-])(?:\.{1,2}[\\/])?(?:[\w.-]+[\\/])+[\w.-]+\.[A-Za-z0-9]{1,10}(?::\d+){0,2}(?![\w\\/])/g, group: 0 },
+  ];
+
+  function findPaths(text) {
+    const found = [];
+    const taken = (a, b) => found.some((f) => a < f.end && b > f.start);
+    for (const { re, group } of PATH_RES) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(text))) {
+        let s = m[group];
+        let start = m.index + (group ? m[0].indexOf(s) : 0);
+        // Trailing punctuation and prompt characters (`dir$`, `dir>`, `file.`) are not part of it.
+        s = s.replace(/[.,;)\]}>$#]+$/, '').replace(/:$/, '');
+        if (s.length < 3) continue;
+        const end = start + s.length;
+        // Part of a URL (https://host/a/b)?
+        if (/[a-z]+:\/\/\S*$/i.test(text.slice(0, start))) continue;
+        if (!taken(start, end)) found.push({ start, end, text: s });
+      }
+    }
+    return found;
+  }
+
+  function pathLinks(term, getTab) {
+    return {
+      provideLinks(y, callback) {
+        // A long path wraps onto several rows: read the whole logical line
+        // (rows joined by wrapping), find paths in it, keep those touching row y.
+        const buf = term.buffer.active;
+        const row = y - 1;
+        if (!buf.getLine(row)) return callback(undefined);
+        let first = row;
+        while (first > 0 && buf.getLine(first)?.isWrapped) first--;
+        let last = row;
+        while (buf.getLine(last + 1)?.isWrapped) last++;
+        const cols = term.cols;
+        let text = '';
+        for (let r = first; r <= last; r++) {
+          const l = buf.getLine(r);
+          // Full width for rows that wrap on, so string offsets map to cells.
+          text += l ? l.translateToString(r === last).padEnd(r === last ? 0 : cols) : '';
+        }
+        const cell = (i) => ({ x: (i % cols) + 1, y: first + Math.floor(i / cols) + 1 });
+        const links = findPaths(text)
+          .map((p) => ({ p, start: cell(p.start), end: cell(p.end - 1) }))
+          .filter(({ start, end }) => start.y <= y && end.y >= y)
+          .map(({ p, start, end }) => ({
+            range: { start, end },
+            text: p.text,
+            decorations: { pointerCursor: true, underline: true },
+            activate: () => { const tab = getTab(); post({ t: 'reveal', path: p.text, cwd: tab?.live.cwd || tab?.cwd || null }); },
+          }));
+        callback(links.length ? links : undefined);
+      },
+    };
   }
 
   function restartTab(tab) {
@@ -280,46 +350,42 @@
     for (const p of profiles) {
       const c = colorOf(p.name);
       const row = el('div', 'profile' + (p.name === current ? ' active' : ''));
-      const chips = p.tools.slice(0, 8).map((t) => `<span title="${esc(t.name)}">${toolIcon(t, 'tiny')}</span>`).join('');
+      // Tools as a row of small icons: click one for its options; "+" connects another tool.
+      const histNote = (t) => (t.history === 'original' ? ' · uses your original folder' : t.history === 'shared' ? ' · shared history' : '');
+      const chips = p.tools.slice(0, 8).map((t, i) =>
+        `<button class="tchip${t.history === 'original' || t.history === 'shared' ? ' hist' : ''}" data-i="${i}" title="${esc(t.name + histNote(t))} · click for options">${toolIcon(t, 'tiny')}</button>`).join('')
+        + (p.name === current ? `<button class="tchip add" title="Connect a tool to ${esc(p.name)}">${I('plus')}</button>` : '');
       row.innerHTML = `
         <div class="avatar" style="--c:${c.grad}">${esc(p.name.slice(0, 1))}</div>
         <div class="meta">
           <div class="name">${esc(p.name)}${p.isDefault ? '<span class="pill">default</span>' : ''}${p.name === current ? '<span class="pill live">active</span>' : ''}</div>
           ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ''}
-          ${p.tools.length ? `<div class="tools">${chips}${p.tools.length > 8 ? `<span class="more">+${p.tools.length - 8}</span>` : ''}</div>` : ''}
+          ${chips ? `<div class="tools">${chips}${p.tools.length > 8 ? `<span class="more">+${p.tools.length - 8}</span>` : ''}</div>` : ''}
         </div>
         <button class="open" title="New tab as ${esc(p.name)}">${I('plus')}</button>`;
       row.addEventListener('click', (e) => {
+        const chip = e.target.closest('.tchip');
+        if (chip) {
+          e.stopPropagation();
+          if (chip.classList.contains('add')) { openConnect(p); return; }
+          const rc = chip.getBoundingClientRect();
+          toolMenu(p, p.tools[+chip.dataset.i], rc.left, rc.bottom + 4);
+          return;
+        }
         if (e.target.closest('.open')) openTab({ profile: p.name });
         else switchAccount(p.name);
       });
       row.addEventListener('contextmenu', (e) => { e.preventDefault(); profileMenu(p, e.clientX, e.clientY); });
       box.appendChild(row);
 
-      if (p.name === current) {
-        const d = el('div', 'details');
-        for (const t of p.tools) {
-          const badge = t.history === 'original' ? '<i class="hb" title="Uses your original folder: its sign-in and all your conversations"></i>'
-            : t.history === 'shared' ? '<i class="hb shared" title="Own sign-in, shared conversation history"></i>' : '';
-          const r = el('div', 'tool-row', `${toolIcon(t, 'tiny')}<span class="t-name" title="${esc(t.summary ? `${t.name} · ${t.summary}` : t.name)}">${esc(t.name)}</span>${badge}`);
-          const more = el('button', 'tmore', '⋯');
-          more.title = 'More';
-          more.onclick = (e) => { const rc = e.currentTarget.getBoundingClientRect(); toolMenu(p, t, rc.left, rc.bottom + 4); };
-          r.appendChild(more);
-          r.addEventListener('contextmenu', (e) => { e.preventDefault(); toolMenu(p, t, e.clientX, e.clientY); });
-          d.appendChild(r);
-        }
-        const add = el('button', 'add-tool', `${I('plus')}<span>Connect a tool</span>`);
-        add.onclick = () => openConnect(p);
-        d.appendChild(add);
-        box.appendChild(d);
-      }
     }
   }
 
   // The per-tool menu: everything about one tool account lives here.
   function toolMenu(p, t, x, y) {
-    const items = [];
+    const hist = t.history === 'original' ? 'Uses your original folder (sign-in + conversations)'
+      : t.history === 'shared' ? 'Own sign-in, shared conversation history' : '';
+    const items = [{ header: t.name, sub: [hist, t.summary].filter(Boolean).join(' · '), html: toolIcon(t, 'tiny') }];
     if (t.history) {
       const n = t.conversations ?? 0;
       if (t.history !== 'original') {
@@ -724,6 +790,11 @@
     m.innerHTML = '';
     for (const it of items) {
       if (it === '-') { m.appendChild(el('hr')); continue; }
+      if (it.header) {
+        m.appendChild(el('div', 'mhead', `${it.html || ''}<div><b>${esc(it.header)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</div>`));
+        m.appendChild(el('hr'));
+        continue;
+      }
       const b = el('button', '', `${it.html || I(it.icon)}<span>${esc(it.label)}</span>`);
       b.onclick = () => { hideMenu(); it.run(); };
       m.appendChild(b);

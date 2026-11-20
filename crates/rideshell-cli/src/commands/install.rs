@@ -398,9 +398,52 @@ pub mod windows {
         key.set_value("InstallLocation", &dir.to_string_lossy().as_ref())?;
         key.set_value("DisplayIcon", &exe_s.as_ref())?;
         key.set_value("UninstallString", &format!("\"{exe_s}\" uninstall --program"))?;
+        key.set_value("QuietUninstallString", &format!("\"{exe_s}\" uninstall --program --yes"))?;
         key.set_value("NoModify", &1u32)?;
         key.set_value("NoRepair", &1u32)?;
+        // What Settings → Apps and Control Panel show: size, install date, links.
+        key.set_value("EstimatedSize", &folder_size_kb(dir))?;
+        key.set_value("InstallDate", &install_date(rideshell_core::store::now()))?;
+        key.set_value("Comments", &"One terminal for every shell and every account")?;
+        let repo = "https://github.com/gauravvvvvvvvvv/RideShell";
+        key.set_value("URLInfoAbout", &repo)?;
+        key.set_value("HelpLink", &format!("{repo}/issues"))?;
+        key.set_value("URLUpdateInfo", &format!("{repo}/releases"))?;
+        key.set_value("Readme", &format!("{repo}#readme"))?;
         Ok(())
+    }
+
+    /// Size of the installed files in KB (EstimatedSize is a DWORD in KB).
+    fn folder_size_kb(dir: &Path) -> u32 {
+        fn walk(p: &Path) -> u64 {
+            std::fs::read_dir(p)
+                .map(|rd| {
+                    rd.flatten()
+                        .map(|e| match e.file_type() {
+                            Ok(t) if t.is_dir() => walk(&e.path()),
+                            Ok(_) => e.metadata().map(|m| m.len()).unwrap_or(0),
+                            Err(_) => 0,
+                        })
+                        .sum()
+                })
+                .unwrap_or(0)
+        }
+        u32::try_from(walk(dir).div_ceil(1024)).unwrap_or(u32::MAX)
+    }
+
+    /// `YYYYMMDD` (UTC) for Unix seconds, as Apps & Features expects.
+    pub(super) fn install_date(unix: i64) -> String {
+        // Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
+        let z = unix.div_euclid(86_400) + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = yoe + era * 400 + i64::from(m <= 2);
+        format!("{y:04}{m:02}{d:02}")
     }
 
     pub fn unregister_uninstall() -> Result<()> {
@@ -614,5 +657,16 @@ pub mod windows {
         let mut ids = [0u32; 4];
         let n = unsafe { GetConsoleProcessList(ids.as_mut_ptr(), ids.len() as u32) };
         n == 1
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn install_dates_are_yyyymmdd() {
+        use super::windows::install_date;
+        assert_eq!(install_date(0), "19700101");
+        assert_eq!(install_date(951_782_400), "20000229"); // leap day
+        assert_eq!(install_date(1_795_171_019), "20261120");
     }
 }

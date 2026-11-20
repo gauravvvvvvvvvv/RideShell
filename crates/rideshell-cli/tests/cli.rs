@@ -733,6 +733,17 @@ fn windows_install_and_uninstall_are_reversible() {
     let uninstall = hkcu.open_subkey(format!(r"{root}\Uninstall\RideShell")).unwrap();
     let cmdline: String = uninstall.get_value("UninstallString").unwrap();
     assert!(cmdline.contains("uninstall --program"));
+    // What Settings → Apps shows: version, size (KB), install date, links.
+    let version: String = uninstall.get_value("DisplayVersion").unwrap();
+    assert_eq!(version, env!("CARGO_PKG_VERSION"));
+    let size: u32 = uninstall.get_value("EstimatedSize").unwrap();
+    assert!(size >= 1024, "the installed exe is several MB: {size} KB");
+    let date: String = uninstall.get_value("InstallDate").unwrap();
+    assert!(date.len() == 8 && date.starts_with("20"), "{date}");
+    let about: String = uninstall.get_value("URLInfoAbout").unwrap();
+    assert!(about.starts_with("https://github.com/"), "{about}");
+    let quiet: String = uninstall.get_value("QuietUninstallString").unwrap();
+    assert!(quiet.ends_with("uninstall --program --yes"), "{quiet}");
     let normal = folders.join("StartMenu").join("RideShell.lnk");
     let admin = folders.join("StartMenu").join("RideShell (Administrator).lnk");
     assert!(normal.is_file() && admin.is_file(), "Start menu entries");

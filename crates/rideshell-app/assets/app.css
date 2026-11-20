@@ -464,3 +464,14 @@ body.light .avatar, body.light .primary { color: #fff; }
 #wz-actions:empty { display: none; }
 body.setup-mode #wizard.overlay { background: rgba(5, 6, 10, .82); }
 body.light .wz-notes { background: rgba(0, 0, 0, .03); }
+
+/* ----- account tools as an icon row ----- */
+.profile .tools .tchip { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-2); position: relative; transition: background .12s, transform .12s; }
+.profile .tools .tchip:hover { background: var(--surface-3, rgba(255, 255, 255, .12)); transform: translateY(-1px); }
+.profile .tools .tchip svg, .profile .tools .tchip .aicon { width: 12px; height: 12px; }
+.profile .tools .tchip.hist::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 6px; height: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 2px var(--bg-2, #12131c); }
+.profile .tools .tchip.add { background: none; border: 1px dashed var(--line-2); color: var(--text-3); }
+.profile .tools .tchip.add:hover { color: var(--violet); border-color: var(--violet); }
+#menu .mhead { display: flex; gap: 9px; align-items: flex-start; padding: 7px 9px 5px; max-width: 320px; }
+#menu .mhead b { display: block; color: var(--text); font-weight: 600; font-size: 12.5px; }
+#menu .mhead small { display: block; color: var(--text-3); font-size: 11px; margin-top: 2px; overflow-wrap: anywhere; }

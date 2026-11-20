@@ -35,6 +35,7 @@ Status legend: ✅ done · 🧪 implemented, not yet tested on that platform · 
 * ✅ Tool shims (`claude`, `codex`, `gh`, any tool via `shim add`), working in PowerShell,
   Git Bash and cmd.exe. They fail closed for missing profiles
 * ✅ Windows self-installer (double-click), user PATH, Apps & Features, clean uninstall
+* ✅ Linux CLI release (x86-64), tests on Linux, real GNOME Keyring storage verified
 * 📋 Verify Claude Code login separation on macOS (Keychain) and Linux
 * 📋 SSH adapter (beyond Git): per-profile `IdentityFile` / config include
 * 📋 Cloudflare Wrangler, AWS and Vercel adapters (API-token variables already work via `secret set`)
@@ -57,7 +58,7 @@ Status legend: ✅ done · 🧪 implemented, not yet tested on that platform · 
 ## Milestone 2c: RideShell App ✅ (Windows)
 
 * ✅ Windowed terminal (WebView2 + xterm.js + ConPTY), tabs, Geist fonts, custom title bar
-* ✅ One-click account switching, per-account tool rows (sign in / status / connect)
+* ✅ One-click account switching (verified by the shell, never typed into a running program), tools as an icon row per account
 * ✅ Launchers, customisable (hide built-ins, pin any installed tool)
 * ✅ Installed-tools browser and `rideshell tools` (PATH scan with sources), per-tool routing
 * ✅ Command palette, settings page (appearance, terminal, sidebar, shell, accounts, advanced)
@@ -66,6 +67,11 @@ Status legend: ✅ done · 🧪 implemented, not yet tested on that platform · 
 * ✅ Real program icons (from each .exe) with a neutral placeholder fallback
 * ✅ Files panel (places, projects, pinned/recent, browse), folder picker, drag and drop,
   Explorer "Open in RideShell"
+* ✅ In-app updates with signed releases (Ed25519 over SHA256SUMS), install wizard, full
+  Apps & Features entry (size, date, links)
+* ✅ Clickable file/folder paths in output → Explorer; live PATH (new tools appear without restart)
+* ✅ Responsive by design: state, scans, folder listings and input off the UI thread
+* ✅ Spotify now-playing controls in the status bar
 * 📋 Split panes, search in scrollback, per-tab colour, drag to reorder tabs
 * 📋 macOS / Linux build of the app (tao/wry support them; ConPTY parts are Windows-only today)
 

@@ -35,5 +35,8 @@ windows-sys.workspace = true
 windows = { version = "0.62", default-features = false, features = ["std", "Media_Control"] }
 winreg.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [build-dependencies]
 embed-resource.workspace = true

@@ -14,57 +14,76 @@
 -->
 
 <p align="center">
-  <b>One terminal. Every shell. Every account.</b><br>
-  PowerShell, cmd and bash in one window · separate Claude Code, Codex, GitHub and Git accounts side by side ·
-  per-project API keys · offline, local, open source
+  <b>Every account. Side by side. In one terminal.</b><br>
+  Work and personal Claude Code, Codex, GitHub CLI and Git identities at the same time ·
+  folders that pick the right account · PowerShell, cmd and bash in one window ·
+  local, open source
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/app.png" alt="RideShell App: accounts sidebar, launchers and a PowerShell tab running cmd and bash commands" width="860">
+  <a href="https://github.com/gauravvvvvvvvvv/RideShell/releases/latest"><b>Download for Windows</b></a> ·
+  <a href="#linux">Linux CLI</a> ·
+  <a href="CHANGELOG.md">What's new</a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/app.png" alt="RideShell App: accounts with their tools as icons, a PowerShell tab running cmd and bash lines, the work account's Git identity, and a clickable file path" width="860">
 </p>
 
 ---
 
 ## Why RideShell
 
-* **Many accounts, no mixing.** Your work and personal Claude Code (or Codex, GitHub CLI, Git
-  identity) run **at the same time** in different tabs or folders. Each account has its own
-  login, settings and history, kept apart by the tool's own config folder. No containers,
-  no Docker, no VMs.
-* **Every shell in one window.** It's real PowerShell, but `dir /s`, `set X=1`, `ls -la`,
-  `export X=1` and `npm i && npm test` run in the shell they were written for. Line after line,
-  in any order, with your folder and variables carried along.
+* **Many accounts, never mixed.** Your work and personal Claude Code (or Codex, GitHub CLI,
+  Git identity) run **at the same time**, in different tabs or folders. Each account has its
+  own sign-in, settings and conversations, kept apart by the tool's own config folder. No
+  containers, no VMs, no logging in and out.
+* **Folders pick the account.** Bind `C:\code\acme` to *work*: every RideShell tab there is
+  *work*, and `claude`, `gh` or `git` started there use work's sign-in and identity.
+* **Safe by default.** Switching accounts never types into a running program. Before
+  `git push`, `gh pr create` or a deploy as the *wrong* account for a folder, RideShell asks.
+  Profiles never leak into your other terminals.
 * **Keys where they belong.** API keys live in Windows Credential Manager (or the macOS
-  Keychain / Linux Secret Service), per account or per project. A key is handed to the program
-  you launch and never left in your shell.
-* **Folders pick the account.** Bind `C:\code\acme` to *work*, and every terminal (or `claude`)
-  opened there is *work*, automatically.
-* **A terminal you'll like using.** Tabs, the command palette, a files panel, real app icons,
-  11 colour schemes (or import any Windows Terminal scheme), and one-click account switching.
-* **Yours.** One executable, no sign-up, no cloud. Everything is stored on your PC, and it's
-  MIT licensed.
+  Keychain / Linux Secret Service), per account or per project, and are handed only to the
+  program you launch.
+* **Every shell in one window.** It's real PowerShell, but `dir /s`, `set X=1`, `ls -la`,
+  `export X=1` and `npm i && npm test` run in the shell they were written for, line after
+  line, with your folder and variables carried along.
+* **A terminal you'll like using.** Tabs, a command palette, a files panel, clickable paths,
+  real app icons, 11 colour schemes (or any Windows Terminal scheme), and it stays fast.
+* **Yours.** One download, no sign-up, no cloud. Signed updates. MIT licensed.
 
 ## Install
 
-**Windows 10/11:** download `rideshell.exe` from the
-[latest release](https://github.com/gauravvvvvvvvvv/RideShell/releases/latest) and double-click it. It installs for your user,
-**without admin rights**, and adds:
+### Windows 10/11
 
-* the *RideShell* and *RideShell (Administrator)* Start menu entries, and a Windows Terminal profile;
+Download **`rideshell.exe`** from the
+[latest release](https://github.com/gauravvvvvvvvvv/RideShell/releases/latest) and
+double-click it. An install wizard opens. It installs for your user, **without admin
+rights**, and adds:
+
+* *RideShell* and *RideShell (Administrator)* to the Start menu, and a Windows Terminal profile;
 * `rideshell` on your PATH, and **Open in RideShell** in Explorer's folder menu;
-* an entry in *Settings → Apps*, for uninstalling like any other app.
+* an entry in *Settings → Apps* (with its size, version and links), to uninstall like any app.
 
-The installer is a small wizard window. Later versions are offered inside the app (*Settings →
-Updates*), and an update installs only if it carries the project's release signature (Ed25519)
-and matches its signed SHA-256 list.
+**Updates come to you.** RideShell App checks for new versions and offers them in a popup.
+An update installs only if it carries the project's **release signature** (Ed25519) and
+matches its signed checksum list. Then it installs without a terminal window and restarts
+when you say so (*Settings → Updates*).
 
-**Linux (x86-64):** the `rideshell` command-line tool (RideShell App is Windows-only for now).
-Needs glibc 2.31+ (Ubuntu 20.04+, Debian 11+, Fedora, Arch…).
+The files aren't code-signed (Authenticode) yet, so Windows SmartScreen may warn on the first
+download: *More info → Run anyway*. Each release lists its SHA-256 checksums if you want to
+check the download.
+
+### Linux
+
+The `rideshell` command-line tool for x86-64 Linux with glibc 2.31+ (Ubuntu 20.04+, Debian 11+,
+Fedora, Arch…). RideShell App is Windows-only for now.
 
 ```bash
 curl -fLO https://github.com/gauravvvvvvvvvv/RideShell/releases/latest/download/rideshell-linux-x86_64.tar.gz
 tar xzf rideshell-linux-x86_64.tar.gz && install -m755 rideshell ~/.local/bin/
-rideshell shell install bash        # or zsh: profiles per folder, tool shims first on PATH
+rideshell shell install bash        # or zsh: per-folder accounts in your shell, tools routed
 ```
 
 Building from source: see [Build](#build).
@@ -73,56 +92,71 @@ Building from source: see [Build](#build).
 
 ```powershell
 rideshell profile create personal      # your first account keeps your existing logins
-rideshell profile create work          # every new account starts with its own, empty logins
+rideshell profile create work          # a new account starts with its own, empty logins
 ```
 
-Then, in RideShell App, click **work** or **personal** in the sidebar, or in any terminal:
+In RideShell App, click **work** or **personal** in the sidebar (or **+** for a new tab as that
+account). In any RideShell terminal:
 
 ```powershell
-# Terminal 1                        # Terminal 2
+# Tab 1                             # Tab 2
 rideshell profile use work          rideshell profile use personal
 claude                              claude            # both run at the same time
 ```
 
 The first time you run `claude` (or `codex`, `gh`) as a new account, the tool asks you to sign
-in, the way it always does. That sign-in is saved to that account only. RideShell has no
-sign-in screens of its own, and API keys are just the account's variables (`rideshell secret set`).
+in the way it always does. That sign-in is saved to that account only. RideShell has no
+sign-in screens of its own.
 
 ```powershell
-rideshell profile bind C:\code\acme work    # this folder (and below) is always "work"
-rideshell run --profile personal -- claude  # one command, one account
+rideshell profile bind C:\code\acme work    # this folder (and everything below) is "work"
+rideshell run --profile personal -- claude  # one command as one account, from any terminal
 ```
 
-**Wrong-account guard.** If a terminal was switched to another account (`profile use`, or a click
-in the app) and you run `git push`, `gh pr create`, `wrangler deploy`, `npm publish` or another
-sensitive command in a folder bound to a *different* account, RideShell asks first:
+**Which account is active?** Highest wins: `--profile` › `rideshell profile use` (this
+terminal) › the deepest bound folder › the default account. `rideshell profile why` explains.
+
+### Wrong-account guard
+
+If a terminal was switched to another account and you run a sensitive command in a folder
+bound to a *different* account, RideShell asks first:
 
 ```text
 warning: this folder belongs to work, but this terminal is using personal (switched with `profile use`)
 Run `git push` as personal? [y/N]
 ```
 
-The list is `[guard] commands` in the config file. Set `RIDESHELL_GUARD=0` to skip it once. It
-covers tools routed through RideShell: `claude`, `codex`, `gh`, `git` (once a Git identity is
-connected) and anything you `rideshell shim add`.
+Guarded by default: `git push`, `gh pr create/merge`, `gh release create`, `gh repo
+create/delete`, `wrangler deploy`, `vercel deploy` / `--prod`, `netlify deploy`, `fly deploy`,
+`npm/pnpm/yarn publish`, `cargo publish`, `docker push`, `terraform apply`, `kubectl apply`,
+`firebase deploy`. Edit the list under `[guard]` in the config file. With no terminal to ask
+in (scripts), it refuses. `RIDESHELL_GUARD=0` skips it once. It covers tools routed through
+RideShell: `claude`, `codex`, `gh`, `git` (once a Git identity is connected) and anything you
+`rideshell shim add`.
 
 ## RideShell App
 
 | | |
 |---|---|
 | <img src="docs/screenshots/files.png" alt="Files panel with favorites, places and a folder browser" width="420"> | <img src="docs/screenshots/themes.png" alt="Appearance settings with colour scheme previews" width="420"> |
-| **Files:** favorites, places, project folders and a browser that follows the tab | **Settings:** themes like Windows Terminal, fonts, sidebar, shell, privacy |
+| **Files:** favorites, places, project folders and a browser that follows the tab | **Settings:** themes like Windows Terminal, fonts, sidebar, shell, updates, privacy |
 
-* **Accounts sidebar:** one click switches the current tab's account, and **+** opens a new tab as
-  it. Each account lists its connected tools, with a ⋯ menu for conversation history and
-  disconnecting. If a program is running in the tab, the account opens in a new tab instead.
+* **Accounts:** one click switches the tab's account. The switch happens only at an idle
+  prompt and shows as done only when the shell confirms it. If a program (Claude Code, an
+  editor) is running in the tab, the account opens in a **new tab in the same folder**
+  instead. Each account shows its tools as **small icons**: click one for its options
+  (conversation history, disconnect), **+** connects another tool. A green dot means the
+  tool uses your original folder or shared history.
 * **Launch:** Claude Code, Codex, GitHub CLI, Git, Git Bash, Command Prompt, PowerShell 7,
-  Node.js, Python, with their real icons. Missing ones offer their official installer, and a tool
-  you install while the app is open shows up without a restart.
-  **Add** pins any installed tool. Right-click to remove one.
+  Node.js, Python, with their real icons. Missing ones offer their official installer, and a
+  tool you install while the app is open **appears without a restart**. **Add** pins any
+  installed tool; right-click to remove one.
+* **Clickable paths:** file and folder paths printed in a tab (`C:\…`, `"C:\Program Files\…"`,
+  `~\…`, `%USERPROFILE%\…`, `/c/…`, `src/main.rs:12:5`, even when wrapped over two rows) open
+  in Explorer with the file selected. Web links open in your browser.
 * **Installed tools** (`Ctrl+Shift+E`, or `rideshell tools`): every command-line tool on your
   PATH, by source (npm, winget, Scoop, cargo, Python, Git…). **Run** it, ☆ **pin** it, or
-  **Route** it through RideShell so it uses your accounts in *every* terminal.
+  **Route** it through RideShell so it uses your accounts in RideShell terminals.
 * **Files:**
   * **Open folder…** opens a tab in any folder. **Favorites** are starred with ☆.
   * **Places** include project folders, which open as their account.
@@ -132,11 +166,14 @@ connected) and anything you `rideshell shim add`.
     and click a file to insert its path.
   * Drag a folder onto the window, use **Open in RideShell** in Explorer, or type
     `rideshell` in Explorer's address bar.
-* **Command palette** (`Ctrl+K`):
+* **Command palette** (`Ctrl+K`): accounts, apps, folders, tools and settings.
   <img src="docs/screenshots/palette.png" alt="Command palette" width="560">
+* **Now playing:** while Spotify plays, the status bar shows the song with previous /
+  play-pause / next (Windows media controls; no sign-in).
 * **Administrator:** *Open as Administrator* opens a second, elevated window. The normal one
   never is.
-* Every sidebar section collapses, and it's remembered.
+* **Fast:** everything slow (scans, folder listings, account creation, update checks) runs in
+  the background, and each tab has its own input path, so typing never waits.
 
 Shortcuts: `Ctrl+T` new tab · `Ctrl+W` close · `Ctrl+Tab` next · `Ctrl+K` palette ·
 `Ctrl+B` sidebar · `Ctrl+Shift+E` tools · `Ctrl+,` settings · `Ctrl+=`/`-` zoom ·
@@ -158,105 +195,76 @@ Each line is checked when you press Enter:
 * **One line, one shell, in any order.** The next line can be a different shell. `cd` and
   variables carry over: `set X=1` in cmd, then `$env:X` in PowerShell, then `echo $X` in bash.
   Exit codes come back as `$LASTEXITCODE`. A line is never split across shells.
-* Force a shell with `@cmd …`, `@bash …` or `@ps …`. `rideshell dialect <line>` explains the
-  choice.
-* bash means Git Bash. zsh-style lines run in bash too, since zsh does not exist on Windows.
-* It's real PowerShell (7 if installed, else 5.1) with your own profile, so modules, completion,
-  history and interactive tools behave exactly as usual.
-
-## Connect any tool
-
-RideShell has no list of supported tools. **Connect a tool** shows the command-line tools
-installed on your PC. When you pick one, RideShell reads that tool's own `--help` and
-pre-fills the **variables** it mentions for API keys or a config folder. You confirm or edit
-them, or leave them empty. To sign in, run the tool in a tab of that account: it uses its own
-sign-in, and the login is saved to that account.
-
-* **Keys** are stored in the OS credential store and given to the tool when that account runs it.
-* **A config-folder variable** gives the account its own folder for that tool. It reaches only
-  that tool, never other programs.
-* **Built in** are only the accounts RideShell is about: Claude Code, Codex and GitHub CLI
-  (their own config folders, plus conversation history) and Git (commit identity).
-
-```powershell
-rideshell inspect vercel                       # what vercel's own help offers
-rideshell identity set work custom tool=vercel folder_var=VERCEL_HOME key_vars=VERCEL_TOKEN
-rideshell secret set VERCEL_TOKEN --profile work   # or sign in: run `vercel login` as work
-```
+* When unsure, a line runs in **PowerShell**. Force a shell with `@cmd …`, `@bash …` or
+  `@ps …`. `rideshell dialect <line>` explains the choice.
+* bash means Git Bash. It's real PowerShell (7 if installed, else 5.1) with your own profile,
+  so modules, completion, history and interactive tools behave exactly as usual.
 
 ## Your Claude Code and Codex conversations
 
-Claude Code and Codex keep your conversations (what `claude --resume` lists) in their config
-folder. A new account starts with **its own, private** conversation history, so work and
-personal never mix. If you want your existing conversations in an account, share them:
+Claude Code and Codex keep conversations (what `claude --resume` lists) in their config
+folder. A new account starts with **its own, private** history, so work and personal never
+mix. To bring your existing conversations into an account:
 
 * **Use the original folder** (`~/.claude`, `~/.codex`): the account uses your existing
-  sign-in **and** all your conversations. Conversations it had in its own folder are moved over,
-  and nothing is overwritten. Your *first* account does this automatically.
-* **Share history**: the account keeps its **own** sign-in but sees the same conversations
-  (a folder link, so no copies). Every account that shares sees all of them.
-* **Separate**: back to its own history (`rideshell history separate`).
-
-To share for every new account, set `share_new_accounts = true` under `[history]` in the config
-file (`rideshell config path`), or turn on *Share conversation history with new accounts* in the
-app's Settings → Profiles.
+  sign-in **and** all your conversations. Your *first* account does this automatically.
+* **Share history:** the account keeps its **own** sign-in but sees the same conversations
+  (a folder link, no copies). Every account that shares sees all of them.
+* **Separate:** back to its own history.
 
 ```powershell
 rideshell history status                       # where each account's conversations live
-rideshell history adopt claude --profile personal
-rideshell history share claude --profile work  # `separate` undoes it
+rideshell history share claude --profile work  # `adopt` / `separate` likewise
 ```
 
-Only conversation files are moved or linked. Sign-in files are never touched.
+To share for every new account: *Settings → Profiles → Share conversation history with new
+accounts*, or `share_new_accounts = true` under `[history]` in the config file. Only
+conversation files are moved or linked; sign-in files are never touched.
 
-## Accounts, keys and any tool
+## Keys, identities and any tool
 
 ```powershell
 rideshell secret set ANTHROPIC_API_KEY --profile work          # hidden prompt, OS credential store
 rideshell secret set ANTHROPIC_API_KEY --dir C:\code\client-a   # this project uses its own key
 rideshell profile env set work AWS_PROFILE corp-prod            # plain settings
 rideshell identity set work git name="Alex Doe" email=alex@acme.example
-rideshell shim add wrangler                                     # any tool, every terminal
+rideshell shim add wrangler                                     # route any tool through RideShell
 ```
 
 * **Isolation:** each account gets its own folder via the variable the tool supports:
   `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GH_CONFIG_DIR`. RideShell never reads, copies or moves
   tokens.
-* **Shims:** typing `claude`, `codex` or `gh` in *any* terminal starts the real tool with the
-  right account. That includes PowerShell, cmd, Git Bash and VS Code. If a terminal points at
-  a deleted profile, the shim refuses to run rather than use the wrong account.
-* **Which account is active?** Highest wins:
-  1. `--profile`
-  2. `rideshell profile use` (this terminal)
-  3. the deepest bound folder
-  4. the default profile
+* **Shims** (`claude`, `codex`, `gh`, `git`, …) start the real tool as the right account
+  **inside RideShell** (the app, a RideShell window, or a shell with `rideshell shell
+  install`). In any other terminal they run the tool exactly as installed. If a terminal points
+  at a deleted account, the shim refuses to run rather than use the wrong one.
+* **Any tool:** RideShell has no list of supported tools. **Connect a tool** reads the tool's
+  own `--help` and suggests the variables it mentions for API keys or a config folder (that
+  folder then becomes per account). To sign in, run the tool as that account.
 
-  `rideshell profile why` explains the choice.
+```powershell
+rideshell inspect vercel                       # what vercel's own help offers
+rideshell identity set work custom tool=vercel folder_var=VERCEL_HOME key_vars=VERCEL_TOKEN
+```
 
 ## Privacy
 
 RideShell is local software. It has no account, no cloud and no background service.
 
-* **What stays on your PC:**
-  * profiles, folder bindings and settings (in SQLite and TOML);
-  * secrets (in the OS credential store);
-  * your own **usage stats**, in *Settings → Privacy & usage*: time used per day and sessions.
-    Only you see them.
+* **What stays on your PC:** accounts, folder bindings and settings (SQLite and TOML), secrets
+  (OS credential store), and your own **usage stats** in *Settings → Privacy & usage*.
 * **Never collected:** commands, folders, file names, accounts, tool names, output, keys.
-* **Optional anonymous user count:** official builds may count how many people use RideShell
-  and for how long. It sends a random ID that **changes every day**, the version, the OS family
-  and active minutes, at most every 5 minutes while the app is open. The server stores no IP
-  addresses.
-  * It's **off in builds from source**. It only exists when built with `RIDESHELL_TELEMETRY_URL`.
-  * Users can switch it off in Settings, or with `DO_NOT_TRACK=1` / `RIDESHELL_NO_TELEMETRY=1`.
-  * The server and dashboard are in [`server/`](server/), so you can see exactly what is
-    stored.
-* **Update check:** RideShell App asks GitHub's public API for the latest release shortly after
-  start and every 6 hours. The request carries no ID, only a generic `RideShell-updater/<version>`
-  user agent. Turn it off in *Settings → Updates*. Nothing installs without your OK.
-* **Optional one-line message slot:** official builds may show one line of text in the status
-  bar, fetched with no ID, cookies or referrer, so it cannot track you. Builds from source
-  leave it out (`RIDESHELL_PROMO_URL`).
+* **Update check:** RideShell App asks GitHub's public API for the latest release shortly
+  after start and every 6 hours, with no ID (only a `RideShell-updater/<version>` user agent).
+  Turn it off in *Settings → Updates*. Nothing installs without your OK.
+* **Optional anonymous user count** (official builds only, off in builds from source): a random
+  ID that **changes every day**, the version, the OS family and active minutes, at most every
+  5 minutes while the app is open. No IP addresses are stored. Switch it off in Settings or
+  with `DO_NOT_TRACK=1`. The server is in [`server/`](server/).
+* **Optional one-line message slot** (official builds only): one line of text in the status
+  bar, fetched with no ID, cookies or referrer.
+
+Details: [SECURITY.md](SECURITY.md).
 
 ## Build
 
@@ -264,42 +272,41 @@ Requires Rust 1.80+ and, on Windows, the MSVC build tools.
 
 ```powershell
 cargo test                                                   # unit + end-to-end tests
-cargo build --release -p rideshell-cli                       # rideshell.exe (CLI, shims, installer)
-powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # single exe that includes RideShell App
+cargo build --release -p rideshell-cli                       # rideshell(.exe): CLI, shims, installer
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # Windows exe with RideShell App inside
 ```
 
-Optional build-time settings (unset by default): `RIDESHELL_TELEMETRY_URL` (anonymous user
-count) and `RIDESHELL_PROMO_URL` (status-bar message). `python scripts/make-icon.py`
-regenerates the icon.
+Releases are signed with the maintainer's offline key (`rideshell-release sign`); the steps,
+including the Linux build in Docker, are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 | Path | What |
 |---|---|
-| `crates/rideshell-core` | Profiles, resolution, environment planning, providers, vault, shells, dialect routing |
+| `crates/rideshell-core` | Accounts, resolution, environment, providers, vault, shells, routing, guard, history, release signatures |
 | `crates/rideshell-cli` | `rideshell` command, shims, installer, RideShell window (console) |
-| `crates/rideshell-app` | RideShell App (tao + wry/WebView2 + xterm.js + ConPTY) |
+| `crates/rideshell-app` | RideShell App (tao + wry/WebView2 + xterm.js + ConPTY), updater, setup wizard |
+| `crates/rideshell-release` | Maintainer tool: release key and signing (not shipped) |
 | `server/` | Optional anonymous usage counter (Cloudflare Worker + D1) and owner dashboard |
 | `scripts/` | Release build, icon generator |
 
 ## Status
 
-v0.1, early but solid on **Windows 11**. Tested there:
+v0.1, early but solid. Tested:
 
-* Windows PowerShell 5.1, Git Bash and cmd (automated, real shells);
-* the RideShell window in a real interactive console;
-* Claude Code and Codex login separation.
+* **Windows 11:** Windows PowerShell 5.1, Git Bash and cmd (automated, real shells); the
+  RideShell window in a real console; Claude Code and Codex sign-in separation; the app driven
+  end to end (account switching, clickable paths; the update and setup wizards with simulated
+  progress).
+* **Linux (CLI):** the full test suite on Debian 11; clean Ubuntu 22.04, Ubuntu 24.04 and
+  Debian 11 installs with two accounts, per-folder switching in interactive bash and tool
+  shims; keys stored in a real GNOME Keyring (Secret Service), kept apart per account.
+* **Updates:** downloaded from GitHub and verified against the signed checksum list.
 
-**Linux (command-line tool):** the full test suite passes on Linux (Debian 11). The release was
-also checked on clean Ubuntu 22.04, Ubuntu 24.04 and Debian 11: install, two accounts, per-folder
-switching in interactive bash, and tool shims. Keys were stored in and read back from a real
-GNOME Keyring over D-Bus (Secret Service), kept apart per account. KWallet is not tested.
-
-Implemented but not yet tested: PowerShell 7 as the tab engine, zsh and macOS. The UAC prompt
-itself and the native folder picker need a person, so they aren't automated. See
-[ROADMAP.md](ROADMAP.md).
+Not yet tested: PowerShell 7 as the tab engine, zsh, macOS, KWallet. The UAC prompt and the
+native folder picker need a person, so they aren't automated. See [ROADMAP.md](ROADMAP.md).
 
 ## Documentation
 
-[ARCHITECTURE.md](ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md) ·
+[CHANGELOG.md](CHANGELOG.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md) ·
 [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md)
 
 ## Third-party components

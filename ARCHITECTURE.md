@@ -52,8 +52,20 @@ crates/
     src/vault.rs             secrets in the OS credential store (keyring)
     src/shims.rs             tool shims: create/list/refresh, find the real tool
     src/shells/              shell adapters: quoting, emission, scripts, rc-file install
+    src/guard.rs             wrong-account guard for sensitive commands
+    src/history.rs           Claude Code / Codex conversation history (adopt, share, separate)
+    src/release.rs           signed releases: Ed25519 over SHA256SUMS, built-in public key
+    src/dialect.rs           which shell a line is written for (PowerShell, cmd, bash)
+    src/discover.rs          read a tool's own --help for key / config variables
   rideshell-cli/             the `rideshell` binary: clap definitions, commands, output
     tests/cli.rs             end-to-end tests, including real PowerShell and bash sessions
+  rideshell-app/             RideShell App (Windows): tao + wry/WebView2 + xterm.js + ConPTY
+    src/updater.rs           update check, download, signature check, hidden install
+    src/reveal.rs            clickable paths → Explorer
+    src/envpath.rs           live PATH (tools installed while the app runs)
+    src/media.rs             Spotify now playing (Windows media controls)
+    assets/                  HTML/CSS/JS UI (compiled in; no npm build)
+  rideshell-release/         maintainer tool: release key, signing, verification (not shipped)
 ```
 
 Planned modules (history, navigation, directory map, dependency store, TUI) get their own
@@ -248,16 +260,16 @@ macOS is unverified until then. API-key accounts (`ANTHROPIC_API_KEY` secret) ar
 * **No tool list.** Built-in providers exist only for Claude Code, Codex, GitHub CLI and Git.
 * Every other tool is a `custom-<tool>` identity with:
   * `tool`;
-  * `login` (sign-in arguments);
   * `folder_var` / `file_var` (each account gets `<accounts>/custom-<tool>/<profile>`);
   * `key_vars` (profile secrets).
+* **No sign-in handling.** RideShell has no `auth` command or sign-in UI: a tool signs in by
+  itself when it runs as an account, and its login lands in that account's folder.
 * Custom variables are **tool-scoped**. `layered_env` skips them, and `run::add_tool_scoped`
-  adds them only when that tool is launched (through its shim, `run` or `auth`).
+  adds them only when that tool is launched (through its shim or `run`).
 * `discover::inspect` runs the tool's `--help` (plus `auth --help` / `help environment` when
   mentioned):
   * with no stdin, no window, a 5 s limit, 256 KB of output, and `CI=1`, `NO_COLOR=1`;
-  * it collects sign-in subcommands and UPPER_CASE variables, sorted into key-like and
-    config-like.
+  * it collects UPPER_CASE variables, sorted into key-like and config-like.
   * These are suggestions, and the user confirms them.
 
 ### Conversation history (`history.rs`)
@@ -301,7 +313,7 @@ project. Secrets stay *references* (`EnvValue::Secret { vault_id }`) until launc
   Service. Service `rideshell`, entry ids `profile/<profile_id>/<KEY>` and `dir/<row_id>`
   (ids survive renames).
 * The database stores only `secret = 1` with an empty value.
-* **Materialised only on launch** (shims, `run`, `auth`). The prompt hook calls
+* **Materialised only on launch** (shims, `run`). The prompt hook calls
   `materialize(env, None)` and never sees secret values. `RIDESHELL_STATE` stores FNV
   fingerprints of applied values, not the values.
 * Profile delete, duplicate and `uninstall --purge` keep the vault in sync.
@@ -315,14 +327,24 @@ project. Secrets stay *references* (`EnvValue::Secret { vault_id }`) until launc
 * `main()` checks the name it was invoked as. If that is not `rideshell`, it runs as the shim
   for that tool. The real tool is found via `which_all`, skipping the shims directory and
   RideShell itself.
-* The shim resolves the profile (session → binding → default), materialises the environment
-  with secrets, creates account directories, prints one dim notice line when stderr is a
-  terminal (`shims.notify`), and `exec`s / spawns the real tool.
+* **Only inside RideShell.** The shim applies a profile only when the terminal is a RideShell
+  window or has RideShell's shell integration (`RIDESHELL_SESSION` / `RIDESHELL_SHELL`), or a
+  profile is named explicitly (`RIDESHELL_PROFILE`). In any other terminal it runs the real
+  tool untouched, so nothing from RideShell leaks into plain PowerShell, cmd or bash.
+* Inside RideShell, the shim resolves the profile (session → binding → default), materialises
+  the environment with secrets, creates account directories, prints one dim notice line when
+  stderr is a terminal (`shims.notify`, not for `git`), and `exec`s / spawns the real tool.
+* **Wrong-account guard** (`guard.rs`, `[guard]` in config.toml): before a sensitive command
+  (`git push`, `gh pr create`, deploys, publishes; a tool name plus words that must appear in
+  the arguments), if the profile came from the session (`profile use`) and the folder is
+  bound to a *different* profile, the shim asks `[y/N]`. Without a terminal it refuses.
+  `RIDESHELL_GUARD=0` skips it. Connecting a Git identity shims `git` so `git push` is
+  covered.
 * It **fails closed**: a session naming a missing profile is an error, never a fallback to
   another account. `RIDESHELL_SHIM_BYPASS=1` runs the real tool untouched.
 * Overhead is about 20 ms per launch (release build, Windows).
-* Shims are on PATH via the installer (user PATH, all terminals including cmd) and via shell
-  integration (front of PATH, which beats system-PATH tools in PowerShell and bash).
+* Shims are on PATH via the installer (user PATH) and via shell integration (front of PATH,
+  which beats system-PATH tools in PowerShell and bash). Outside RideShell they pass through.
 * Windows cannot overwrite a running executable. Shims and the installed exe are renamed
   aside and replaced, and leftovers are cleaned up next time.
 
@@ -405,8 +427,27 @@ window; any other copy runs the installer.
 * **Live tab state:** with `TERM_PROGRAM=RideShell`, the session's prompt also emits the
   invisible `OSC 7777;profile=<p>;admin=<0|1>;cwd=<path>`, which labels tabs and drives the
   sidebar and status bar.
-* **Account switching:** sends `Esc` (clears the line in PSReadLine) and
-  `rideshell profile use <name>` to the tab, the same path a typed command takes.
+* **Account switching:** only when the tab is idle at its prompt (known from OSC 7777): sends
+  `Esc` (clears the line in PSReadLine) and `rideshell profile use <name>`. The tab shows
+  `old → new…` and the account badge changes only when the next prompt reports the new
+  profile; otherwise (or after 8 s) the tab says it could not switch. If a program owns the
+  tab (Claude Code, an editor), the account opens in a new tab in the same folder instead,
+  so nothing is ever typed into a running program.
+* **Off the UI thread:** state refreshes (profiles, PATH scan, conversation counts, registry)
+  run on a background `Refresher` that merges overlapping requests; folder listings, account
+  creation, update checks and the tools scan run on worker threads; each tab has its own
+  input-writer thread, so a program that stops reading input can only stall its own tab.
+* **Live PATH** (`envpath.rs`): each refresh merges new folders from the registry PATH into the
+  app's PATH, so tools installed while the app is open (winget, setups) appear in Launch and
+  in new tabs without a restart.
+* **Clickable paths** (`reveal.rs` + an xterm link provider): absolute, quoted, `~`, `%VAR%`,
+  Git Bash `/c/…` and relative `dir/file.ext[:line[:col]]` paths in the output, including
+  ones wrapped across rows. A click resolves the path against the tab's folder and opens
+  Explorer with the file selected (a folder opens; a missing path opens its nearest folder).
+* **Now playing** (`media.rs`): Windows media controls (`GlobalSystemMediaTransportControls`),
+  polled on a background thread, only Spotify, sent to the page only on change. The status
+  bar shows the song and previous / play-pause / next while Spotify has played.
+* **Updates and setup** (`updater.rs`, `assets/update.js`): see 8h.
 * **Installed tools** (`rideshell_core::tools`): a directory scan of PATH. The first match
   per name wins, in PATHEXT order. Each directory is classified by path (npm, winget, scoop,
   cargo, python, git, store, program...). Nothing is executed. *Route* = `shims::create`.
@@ -431,6 +472,27 @@ window; any other copy runs the installer.
   merges shortcuts with identical command lines.
 * **Admin:** the app re-launches itself with `runas`. An elevated window is separate, since a
   non-elevated process cannot host an elevated ConPTY child.
+
+## 8h. Updates, setup wizard and signed releases
+
+* **Check:** RideShell App asks `api.github.com/repos/<repo>/releases/latest` via the system's
+  `curl.exe` (hidden), 15 s after start and every 6 h (Settings → Updates). Newer → popup.
+* **Install:** download `rideshell.exe` (only from the repo's release URLs, progress from the
+  file size), then verify: `SHA256SUMS` must carry a valid **Ed25519** signature
+  (`SHA256SUMS.sig`) for `release::RELEASE_PUBLIC_KEY`, and list the download's SHA-256.
+  Then `rideshell.exe install --yes` runs with no window; the wizard offers a restart.
+* **Release key:** `rideshell-release keygen` creates it once; the secret seed stays in
+  `~/.rideshell-release/signing.key` (never in the repo). `rideshell-release sign <dir>`
+  writes `SHA256SUMS`, `SHA256SUMS.sig` and per-file `.sha256`, then verifies them. A release
+  without a valid signature is refused by the updater.
+* **Setup wizard:** a double-click on a not-yet-installed `rideshell.exe` writes the bundled
+  app to `%TEMP%` and starts it with `--setup <rideshell.exe>`; the app shows the install
+  wizard instead of terminals and runs the installer with no window.
+* **Apps & Features:** `install` registers DisplayName, DisplayVersion, Publisher, icon,
+  EstimatedSize (installed size), InstallDate, links (about, help, updates) and
+  (Quiet)UninstallString under `HKCU\…\Uninstall\RideShell`, refreshed on every install.
+* **Linux:** the CLI (no app) is built in Docker (`rust:1-bullseye`, glibc 2.31) with libdbus
+  vendored (`dbus` crate `vendored`), so it needs nothing beyond glibc.
 
 ## 8g. Usage stats, optional counter and message slot (`assets/usage.js`)
 
@@ -461,7 +523,9 @@ in-process, and fails closed when a selected profile is missing.
   floor for just spawning any process. The cost is one SQLite open plus a few small queries.
 * No filesystem scanning in the hot path. Binding lookup is a canonicalise plus an
   in-memory longest-prefix match over the bindings table.
-* Release binary is about 4.4 MB with SQLite statically linked. No runtime dependencies.
+* The CLI binary is about 4–5 MB with SQLite statically linked; the Windows release exe
+  (CLI + bundled app) is about 10 MB. No runtime dependencies beyond the OS (WebView2 on
+  Windows, glibc on Linux).
 * Shim launch overhead is about 20 ms (`claude --version`: 33 ms direct, 52 ms via shim).
 
 ## 11. Planned modules and where they attach

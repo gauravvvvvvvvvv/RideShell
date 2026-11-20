@@ -13,6 +13,7 @@ mod exeicon;
 mod explorer;
 mod media;
 mod pty;
+mod reveal;
 mod state;
 mod updater;
 
@@ -193,6 +194,11 @@ enum Msg {
     SetupInstall,
     /// Start the installed RideShell App and close this window.
     Relaunch,
+    /// A path clicked in a terminal: show it in Explorer (`cwd`: the tab's folder).
+    Reveal {
+        path: String,
+        cwd: Option<String>,
+    },
 }
 
 struct Startup {
@@ -509,6 +515,22 @@ fn main() {
                                 report(json!({ "t": "wizard", "step": "error", "error": format!("{e:#}") }));
                             }
                             busy.store(false, SeqCst);
+                        });
+                    }
+                    Msg::Reveal { path, cwd } => {
+                        let p = proxy.clone();
+                        std::thread::spawn(move || {
+                            let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
+                            let full = reveal::resolve(
+                                &path,
+                                cwd.as_deref().map(std::path::Path::new),
+                                home.as_deref(),
+                                |n| std::env::var(n).ok(),
+                            );
+                            if !reveal::reveal(&full) {
+                                let text = format!("Not found: {}", full.display());
+                                let _ = p.send_event(UserEvent::Update(json!({ "t": "toast", "kind": "error", "text": text })));
+                            }
                         });
                     }
                     Msg::Relaunch => {
