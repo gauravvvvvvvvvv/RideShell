@@ -14,6 +14,7 @@
 -->
 
 <p align="center">
+  <a href="https://www.producthunt.com/products/rideshell?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-rideshell" target="_blank" rel="noopener noreferrer"><img alt="RideShell - Use multiple Claude Code and Codex accounts seamlessly. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1324658&amp;theme=light&amp;t=1795204260786"></a>
   <b>Every account. Side by side. In one terminal.</b><br>
   Work and personal Claude Code, Codex, GitHub CLI and Git identities at the same time ·
   folders that pick the right account · PowerShell, cmd and bash in one window ·
