@@ -2,7 +2,7 @@
 
 Six releases in three days. Newest first.
 
-## Unreleased
+## 0.1.6 (2026-11-23)
 
 * Git per account, from the app: click an account's Git icon → **Change name, e-mail & SSH
   key…**, or **+** → `git`. RideShell asks for the three values (Enter keeps the one shown,
