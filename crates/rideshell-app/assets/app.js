@@ -412,6 +412,10 @@
       items.push({ icon: 'doc', label: `${n} conversation${n === 1 ? '' : 's'} here · details`, run: () => runInNewTab('rideshell history status', { title: 'History', icon: 'doc' }) });
       items.push('-');
     }
+    if (t.id === 'git') {
+      items.push({ icon: 'user', label: 'Change name, e-mail & SSH key…', run: () => runInNewTab(`rideshell connect git --profile ${p.name}`, { profile: p.name, title: `Git · ${p.name}`, icon: 'user' }) });
+      items.push('-');
+    }
     items.push({ icon: 'close', label: `Disconnect ${t.name}`, run: () => {
       if (confirm(`Disconnect ${t.name} from ${p.name}?`)) {
         runInNewTab(`rideshell identity unset ${p.name} ${t.id}`, { profile: p.name, title: `Disconnect · ${t.name}`, icon: 'close' });

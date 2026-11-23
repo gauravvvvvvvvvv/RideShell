@@ -35,7 +35,8 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
     if let Some(builtin) =
         providers::registry().iter().find(|pr| pr.id() != "custom" && pr.tool().eq_ignore_ascii_case(&tool))
     {
-        identity::set(ctx, &p.name, builtin.id(), &[])?;
+        let pairs = if builtin.id() == "git" { ask_git_identity(ctx, &p.name, p.id)? } else { Vec::new() };
+        identity::set(ctx, &p.name, builtin.id(), &pairs)?;
         return Ok(0);
     }
 
@@ -91,4 +92,35 @@ pub fn run(ctx: &Ctx, tool: Option<String>, profile: Option<String>) -> Result<i
         }
     }
     Ok(0)
+}
+
+/// Git's name, e-mail and SSH key for this account, asked in plain prompts.
+/// Each answer defaults to the account's current value, or else the global
+/// Git setting, so Enter keeps it. Nothing is asked when no one is typing.
+fn ask_git_identity(ctx: &Ctx, profile: &str, profile_id: i64) -> Result<Vec<String>> {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        return Ok(Vec::new());
+    }
+    let current = ctx.store()?.identities(profile_id)?.remove("git").unwrap_or_default();
+    let global = |key: &str| {
+        let git = shims::find_real("git", Some(&ctx.paths.shims_dir())).ok()?;
+        let out = std::process::Command::new(git).args(["config", "--global", "--get", key]).output().ok()?;
+        let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (!v.is_empty()).then_some(v)
+    };
+    anstream::println!("Git identity for {} (Enter keeps the value shown):", ui::accent(profile));
+    let mut pairs = Vec::new();
+    for (key, label, fallback) in [
+        ("name", "Name", global("user.name")),
+        ("email", "E-mail", global("user.email")),
+        ("ssh_key", "SSH key file (optional)", None),
+    ] {
+        let default = current.get(key).cloned().or(fallback).unwrap_or_default();
+        let answer = ui::ask(label, &default).trim().to_string();
+        if !answer.is_empty() {
+            pairs.push(format!("{key}={answer}"));
+        }
+    }
+    Ok(pairs)
 }

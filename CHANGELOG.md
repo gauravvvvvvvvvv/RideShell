@@ -2,6 +2,13 @@
 
 Six releases in three days. Newest first.
 
+## Unreleased
+
+* Git per account, from the app: click an account's Git icon → **Change name, e-mail & SSH
+  key…**, or **+** → `git`. RideShell asks for the three values (Enter keeps the one shown,
+  starting from your global Git settings), so each account commits and pushes as itself while
+  your global Git identity stays as it is everywhere else.
+
 ## 0.1.5 (2026-11-21)
 
 **Launch hardening: a smarter account guard, safer updates, lower CPU, working links.**
